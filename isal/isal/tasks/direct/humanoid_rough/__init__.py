@@ -19,7 +19,9 @@ from .base_config import (
     SceneContextCfg,
 )
 from .base_env import ISALHumanoidEnv
+from .height_scan_env import ISALHumanoidHeightScanEnv
 from .scene_cfg import SceneCfg
+from .terrain_perception_cfg import TerrainPerceptionCfg
 from .terrain_generator_cfg import GRAVEL_TERRAINS_CFG, ROUGH_HARD_TERRAINS_CFG, ROUGH_TERRAINS_CFG
 
 
@@ -33,6 +35,16 @@ gym.register(
     },
 )
 
+gym.register(
+    id="ISAL-Humanoid-Rough-HeightScan-v0",
+    entry_point=f"{__name__}.height_scan_env:ISALHumanoidHeightScanEnv",
+    disable_env_checker=True,
+    kwargs={
+        "env_cfg_entry_point": f"{__name__}.isal_env_cfg:ISALHumanoidRoughHeightScanEnvCfg",
+        "rsl_rl_cfg_entry_point": f"{agents.__name__}.isal_agent_cfg:ISALHumanoidRoughHeightScanAgentCfg",
+    },
+)
+
 __all__ = [
     "BaseAgentCfg",
     "BaseEnvCfg",
@@ -42,6 +54,7 @@ __all__ = [
     "GRAVEL_TERRAINS_CFG",
     "HeightScannerCfg",
     "ISALHumanoidEnv",
+    "ISALHumanoidHeightScanEnv",
     "NoiseCfg",
     "NoiseScalesCfg",
     "NormalizationCfg",
@@ -52,5 +65,6 @@ __all__ = [
     "RobotCfg",
     "SceneCfg",
     "SceneContextCfg",
+    "TerrainPerceptionCfg",
     "mdp",
 ]

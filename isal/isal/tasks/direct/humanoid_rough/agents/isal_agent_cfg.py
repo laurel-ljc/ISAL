@@ -42,6 +42,7 @@ from tensordict import TensorDict
 from functools import lru_cache
 
 from isal.tasks.direct.humanoid_rough.base_config import BaseAgentCfg
+from isal.tasks.direct.humanoid_rough.height_scan import mirror_flat_height_scan
 
 
 def generate_height_scan_mirror(start_idx=140, rows=11, cols=17):
@@ -138,12 +139,20 @@ def mirror_actions(actions):
     mirrored_actions = mirrored_actions * signs
     return mirrored_actions
 
+
+def mirror_height_scan_observation(env, height_scan):
+    """Mirror the Stage 2 height-scan group using the environment's resolved grid shape."""
+    base_env = getattr(env, "unwrapped", env)
+    return mirror_flat_height_scan(height_scan, base_env.height_scan_grid_shape)
+
 def data_augmentation_func(env, obs, actions):
     if obs is None:
         obs_aug = None
     else:
         obs_mirror = obs.clone()
         obs_mirror["policy"] = mirror_policy_observation(obs["policy"])
+        if "height_scan" in obs.keys():
+            obs_mirror["height_scan"] = mirror_height_scan_observation(env, obs["height_scan"])
         if "critic" in obs.keys():
             obs_mirror["critic"] = mirror_critic_observation(obs["critic"])
         obs_aug = torch.cat([obs, obs_mirror], dim=0)
@@ -217,3 +226,20 @@ class ISALHumanoidRoughAgentCfg(ISALHumanoidFlatAgentCfg):
             ),
             rnd_cfg=None,  # RslRlRndCfg()
         )
+
+
+@configclass
+class ISALHumanoidRoughHeightScanAgentCfg(ISALHumanoidRoughAgentCfg):
+    """Ordinary PPO baseline that concatenates proprio history and the current scan."""
+
+    def __post_init__(self):
+        super().__post_init__()
+        self.policy.class_name = "rsl_rl.modules:ActorCritic"
+        self.algorithm.class_name = "rsl_rl.algorithms:PPO"
+        self.obs_groups = {
+            "policy": ["policy", "height_scan"],
+            "critic": ["critic"],
+        }
+        self.experiment_name = "isal_humanoid_rough_height_scan"
+        self.neptune_project = "isal_humanoid_rough_height_scan"
+        self.wandb_project = "isal_humanoid_rough_height_scan"

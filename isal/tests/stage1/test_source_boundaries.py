@@ -22,18 +22,20 @@ def test_upstream_submodules_are_clean() -> None:
 
 
 def test_isal_task_code_does_not_import_robolab_tasks() -> None:
-    occurrences: list[tuple[Path, str]] = []
+    imported_modules: list[str] = []
     for path in PACKAGE_ROOT.rglob("*.py"):
-        for line in path.read_text(encoding="utf-8").splitlines():
-            if "robolab" in line:
-                occurrences.append((path.relative_to(PROJECT_ROOT), line.strip()))
-
-    assert occurrences == [
-        (
-            Path("isal/tasks/direct/humanoid_rough/isal_env_cfg.py"),
-            "from robolab.assets.robots import RPO_CFG",
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        imported_modules.extend(
+            node.module
+            for node in ast.walk(tree)
+            if isinstance(node, ast.ImportFrom) and node.module is not None and node.module.startswith("robolab")
         )
+
+    assert sorted(imported_modules) == [
+        "robolab.assets.robots",
+        "robolab.robolab.assets.robots",
     ]
+    assert not any(module.startswith("robolab.tasks") for module in imported_modules)
 
 
 def test_training_entrypoint_owns_registration_and_validation_exit() -> None:

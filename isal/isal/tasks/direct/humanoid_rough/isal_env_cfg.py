@@ -50,12 +50,20 @@ from isal.tasks.direct.humanoid_rough.base_config import (
     SceneContextCfg,
 )
 from isal.tasks.direct.humanoid_rough.scene_cfg import SceneCfg
+from isal.tasks.direct.humanoid_rough.terrain_perception_cfg import TerrainPerceptionCfg
 from isal.tasks.direct.humanoid_rough.terrain_generator_cfg import (
     GRAVEL_TERRAINS_CFG,
     ROUGH_HARD_TERRAINS_CFG,
     ROUGH_TERRAINS_CFG,
 )
-from robolab.robolab.assets.robots import RPO_CFG
+try:
+    from robolab.assets.robots import RPO_CFG
+except ModuleNotFoundError as exc:
+    if exc.name != "robolab.assets":
+        raise
+    # Monorepo checkout fallback when the outer submodule directory is resolved
+    # as a namespace package before RoboLab's editable installation.
+    from robolab.robolab.assets.robots import RPO_CFG
 
 
 @configclass
@@ -219,3 +227,24 @@ class ISALHumanoidRoughEnvCfg(ISALHumanoidFlatEnvCfg):
         self.sim.physx.gpu_collision_stack_size = 2**29
         self.reward.ang_vel_xy_l2.weight = -0.05
         self.reward.lin_vel_z_l2.weight = -0.05
+
+
+@configclass
+class ISALHumanoidRoughHeightScanEnvCfg(ISALHumanoidRoughEnvCfg):
+    """Rough baseline with a root-relative height scan exposed to the Actor."""
+
+    terrain_perception: TerrainPerceptionCfg = TerrainPerceptionCfg()
+
+    def __post_init__(self):
+        super().__post_init__()
+        perception = self.terrain_perception
+        self.scene_context.height_scanner.enable_height_scan_actor = True
+        self.scene_context.height_scanner.size = perception.size
+        self.scene_context.height_scanner.resolution = perception.resolution
+        self.scene_context.height_scanner.offset = (perception.offset_x, 0.0, 20.0)
+        self.noise.noise_scales.height_scan = 0.0
+        self.scene = SceneCfg(
+            config=self.scene_context,
+            physics_dt=self.sim.dt,
+            step_dt=self.decimation * self.sim.dt,
+        )

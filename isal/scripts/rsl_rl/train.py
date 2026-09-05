@@ -376,7 +376,19 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
             next_obs, rewards, dones, extras = env.step(zero_actions)
         if not torch.isfinite(rewards).all():
             raise RuntimeError("Validation failed: reward contains non-finite values.")
-        expected_shapes = {"policy": (env.num_envs, 780), "critic": (env.num_envs, 3260)}
+        expected_shapes = {
+            "policy": (
+                env.num_envs,
+                env.unwrapped.cfg.observation_space * env.unwrapped.cfg.robot.actor_obs_history_length,
+            ),
+            "critic": (
+                env.num_envs,
+                env.unwrapped.cfg.state_space * env.unwrapped.cfg.robot.critic_obs_history_length,
+            ),
+        }
+        if "height_scan" in obs:
+            height, width = env.unwrapped.height_scan_grid_shape
+            expected_shapes["height_scan"] = (env.num_envs, height * width)
         actual_shapes = {key: tuple(obs[key].shape) for key in expected_shapes}
         if actual_shapes != expected_shapes:
             raise RuntimeError(f"Validation failed: observation shapes {actual_shapes} != {expected_shapes}.")
@@ -385,12 +397,31 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
         missing_extras = {"log", "time_outs"}.difference(extras)
         if missing_extras:
             raise RuntimeError(f"Validation failed: extras missing keys {sorted(missing_extras)}.")
+        actor_input = runner.alg.policy.get_actor_obs(obs)
+        if isinstance(actor_input, tuple):
+            actor_input = actor_input[0]
         print("[VALIDATION] task=", args_cli.task)
         print("[VALIDATION] reset_extras_keys=", sorted(reset_extras.keys()))
         print("[VALIDATION] observation_keys=", sorted(obs.keys()))
         print("[VALIDATION] policy_shape=", tuple(obs["policy"].shape))
+        if "height_scan" in obs:
+            print("[VALIDATION] height_scan_shape=", tuple(obs["height_scan"].shape))
         print("[VALIDATION] critic_shape=", tuple(obs["critic"].shape))
         print("[VALIDATION] action_shape=", tuple(actions.shape))
+        print("[VALIDATION] actor_input_shape=", tuple(actor_input.shape))
+        if "height_scan" in obs:
+            scan_grid = env.unwrapped.height_scan_grid
+            perception_cfg = env.unwrapped.cfg.terrain_perception
+            min_scaled = perception_cfg.min_height / perception_cfg.height_scale
+            max_scaled = perception_cfg.max_height / perception_cfg.height_scale
+            if not torch.isfinite(scan_grid).all():
+                raise RuntimeError("Validation failed: height scan contains non-finite values.")
+            if torch.any(scan_grid < min_scaled) or torch.any(scan_grid > max_scaled):
+                raise RuntimeError(
+                    f"Validation failed: height scan values are outside [{min_scaled}, {max_scaled}]."
+                )
+            print("[VALIDATION] height_scan_grid_shape=", tuple(scan_grid.shape))
+            print("[VALIDATION] height_scan_range=", (float(scan_grid.min()), float(scan_grid.max())))
         print("[VALIDATION] next_policy_shape=", tuple(next_obs["policy"].shape))
         print("[VALIDATION] reward_finite=True")
         print("[VALIDATION] dones_shape=", tuple(dones.shape))
