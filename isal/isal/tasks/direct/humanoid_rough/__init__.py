@@ -45,6 +45,16 @@ gym.register(
     },
 )
 
+gym.register(
+    id="ISAL-Humanoid-Rough-Interaction-v0",
+    entry_point=f"{__name__}.interaction_env:ISALHumanoidInteractionEnv",
+    disable_env_checker=True,
+    kwargs={
+        "env_cfg_entry_point": f"{__name__}.isal_env_cfg:ISALHumanoidRoughInteractionEnvCfg",
+        "rsl_rl_cfg_entry_point": f"{agents.__name__}.isal_agent_cfg:ISALHumanoidRoughInteractionAgentCfg",
+    },
+)
+
 __all__ = [
     "BaseAgentCfg",
     "BaseEnvCfg",

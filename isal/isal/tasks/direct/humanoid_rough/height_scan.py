@@ -2,7 +2,49 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import torch
+
+
+@dataclass(frozen=True)
+class PerceptiveObservationLayout:
+    """Resolved single-frame state schema and sensor/history layout."""
+
+    grid_shape: tuple[int, int]
+    ordering: str
+    actor_history_length: int
+    critic_history_length: int
+    actor_frame_dim: int = 78
+    critic_state_dim: int = 139
+
+    def __post_init__(self):
+        if self.ordering not in ("xy", "yx"):
+            raise ValueError(f"Unsupported GridPattern ordering: {self.ordering!r}.")
+        if any(isinstance(v, bool) or not isinstance(v, int) or v < 1 for v in
+               (*self.grid_shape, self.actor_history_length, self.critic_history_length)):
+            raise ValueError("Grid and history dimensions must be positive integers.")
+
+    @property
+    def num_rays(self) -> int:
+        return self.grid_shape[0] * self.grid_shape[1]
+
+    @property
+    def critic_frame_dim(self) -> int:
+        return self.critic_state_dim + self.num_rays
+
+    def validate_current(self, actor: torch.Tensor, critic_state: torch.Tensor) -> None:
+        if actor.shape[-1] != self.actor_frame_dim or critic_state.shape[-1] != self.critic_state_dim:
+            raise ValueError(f"Observation schema mismatch: expected state dimensions "
+                             f"{self.actor_frame_dim}/{self.critic_state_dim}, "
+                             f"got {actor.shape[-1]}/{critic_state.shape[-1]}.")
+
+
+def restore_observation_history(values: torch.Tensor, length: int, frame_dim: int, name: str) -> torch.Tensor:
+    if values.ndim != 2 or values.shape[-1] != length * frame_dim:
+        raise ValueError(f"{name} observation layout mismatch: expected (batch, {length * frame_dim}) "
+                         f"for {length} frames of {frame_dim}, got {tuple(values.shape)}.")
+    return values.reshape(values.shape[0], length, frame_dim)
 
 
 def infer_height_scan_grid_shape(ray_starts_xy: torch.Tensor) -> tuple[int, int]:
@@ -76,3 +118,19 @@ def mirror_flat_height_scan(values: torch.Tensor, grid_shape: tuple[int, int]) -
     if values.shape[-1] != height * width:
         raise ValueError(f"Expected {height * width} rays, got {values.shape[-1]}.")
     return values.reshape(values.shape[0], height, width).flip(-1).reshape(values.shape[0], -1)
+
+
+def xy_grid_to_flat_ray_order(grid: torch.Tensor, ordering: str) -> torch.Tensor:
+    """Inverse of flat_ray_order_to_xy_grid, preserving native Critic ordering."""
+    if grid.ndim != 4 or grid.shape[1] != 1:
+        raise ValueError(f"Expected (batch,1,x,y) grid, got {tuple(grid.shape)}.")
+    if ordering == "xy":
+        grid = grid.transpose(-2, -1)
+    elif ordering != "yx":
+        raise ValueError(f"Unsupported GridPattern ordering: {ordering!r}.")
+    return grid.flatten(start_dim=1)
+
+
+def mirror_native_height_scan(values: torch.Tensor, grid_shape: tuple[int, int], ordering: str) -> torch.Tensor:
+    grid = flat_ray_order_to_xy_grid(values, grid_shape, ordering)
+    return xy_grid_to_flat_ray_order(grid.flip(-1), ordering)

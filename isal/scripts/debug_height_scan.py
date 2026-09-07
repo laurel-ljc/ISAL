@@ -62,6 +62,7 @@ def main() -> None:
         scan = env.unwrapped.height_scan_grid
         print("[HEIGHT_SCAN] grid_shape=", tuple(scan.shape))
         print("[HEIGHT_SCAN] value_range=", (float(scan.min()), float(scan.max())))
+        print("[HEIGHT_SCAN] diagnostics=", {key: value.item() for key, value in env.unwrapped.height_scan_diagnostics().items()})
         print("[HEIGHT_SCAN] training_started=False")
     finally:
         env.close()

@@ -8,6 +8,7 @@ Registered tasks:
 
 - `ISAL-Humanoid-Rough-v0`: frozen Stage 1 proprioceptive Actor baseline.
 - `ISAL-Humanoid-Rough-HeightScan-v0`: Stage 2 Actor height-scan baseline.
+- `ISAL-Humanoid-Rough-Interaction-v0`: Stage 3 ordinary-PPO task with interaction label collection.
 
 ## Install
 
@@ -37,6 +38,46 @@ critic       (num_envs, 3260)  # 10-frame privileged history with clean scan
 actor input  (num_envs, 967)   # policy + height_scan
 ```
 
+These are the default dimensions. The shared scan preprocessing is now
+`clamp(terrain_z - root_z, -1.5, 0.4) / 0.5`, with output in `[-3.0, 0.8]`.
+It preserves descending terrain heights that previously saturated at `-0.8 m`
+relative to the root. Actor, Critic and interaction snapshots use this same
+definition. Non-finite rays still receive the lower-bound fill value, but are
+counted separately from finite lower saturation.
+
+### Change scan geometry or observation history
+
+Edit `env_cfg.terrain_perception.size`, `resolution`, and `offset_x` (the
+authoritative geometry fields), and `env_cfg.robot.actor_obs_history_length` /
+`critic_obs_history_length`. Set native ordering on
+`env_cfg.scene.height_scanner.pattern_cfg.ordering` (`xy` or `yx`). Final overrides
+are resolved again at environment construction, preserving other scene settings.
+Actual Isaac Lab pattern output determines the grid and Critic frame dimension;
+no independent rounding formula is used.
+
+For example, this non-training check uses a 19 x 11 grid and different histories:
+
+```powershell
+conda run --no-capture-output -n env_isaaclab python -u `
+  isal/scripts/rsl_rl/train.py --task ISAL-Humanoid-Rough-HeightScan-v0 `
+  --headless --num_envs 1 --validate-only `
+  'env.terrain_perception.size=[1.8,1.0]' `
+  env.robot.actor_obs_history_length=3 env.robot.critic_obs_history_length=4 `
+  env.scene.height_scanner.pattern_cfg.ordering=yx
+```
+
+The environment exposes `perceptive_observation_layout` with the resolved grid,
+ordering, frame dimensions, and history lengths. Actor state remains 78 per
+frame; Critic state before scan remains 139 per frame. The new-task mirror
+restores each history frame, mirrors state, converts native scan to canonical
+`(x,y)`, flips y, then restores native ordering. State dimensions and input
+lengths are checked explicitly. Stage 1 retains its legacy augmentation path.
+
+Default network dimensions are unchanged, but the scan distribution has changed.
+To reproduce an old experiment, explicitly set `env.terrain_perception.min_height=-0.8`.
+Existing checkpoints are not converted; changing ray count also changes network
+input dimensions and requires a compatible checkpoint or a new external run.
+
 ## Inspect the RayCaster grid without training
 
 Run without `--headless` to view the height-scan markers. The robot receives zero actions and no runner is created:
@@ -60,3 +101,147 @@ conda run --no-capture-output -n env_isaaclab python -u `
   --headless `
   --num_envs 4096
 ```
+
+## Stage 3: collect interaction labels without training
+
+The new task inherits the Stage 2 observation, action, reward, termination,
+terrain, command, randomization, symmetry, and PPO settings. It adds no model,
+optimizer, auxiliary loss, or policy update. All sampler settings are in
+`isal/interaction/config.py` (`SelfSupervisedCfg`), exposed through
+`env_cfg.self_supervised`. Setting `enabled=False` creates no tracker and
+returns the Stage 2 observation/extras interface.
+
+Run from the repository root. This script creates no runner and applies only
+zero actions; omit `--headless` for a viewer:
+
+```powershell
+conda run --no-capture-output -n env_isaaclab python -u `
+  isal\scripts\debug_interactions.py `
+  --headless --num_envs 1 --steps 200 `
+  --max_samples 1000 --output outputs\stage3_debug
+```
+
+`--num_envs` is restricted to 1–4. The default output is a timestamped folder
+under `outputs/`; an explicit output directory is reused. Exports are
+`summary.json` (all samples and event counters), `samples.csv` (retained labels
+and query coordinates), and `samples.pt` (retained snapshots, contexts and
+diagnostics). Retention is capped at 1000 examples; summary statistics count
+every emitted sample. No complete gait samples is a valid zero-action result,
+not evidence of walking or learning. Synthetic test feedback is never mixed
+into the debug export.
+
+### Scan and touchdown-neighborhood diagnostics
+
+The height-scan debug script and `--validate-only` print current-scan point counts
+and fractions. Repeated observation reads do not accumulate statistics.
+Interaction packets and debug exports additionally contain:
+
+```text
+scan_diagnostics_available                  (N,2,P) bool
+{scan,query}_{total,finite,lower,upper,invalid}_count
+                                           (N,2,P) int64
+{scan,query}_{lower,upper,invalid}_fraction  (N,2,P) float32
+```
+
+`scan` means the full liftoff snapshot; `query` means the closest grid point to
+the touchdown query plus its one-ring neighbors (at most 3 x 3). Borders are
+clipped without repeating points. Exact distance ties select the smaller grid
+coordinate. Query diagnostics use the liftoff coordinate system and the saved
+raw finite/lower/upper masks, never the current touchdown scan. Only compact
+counts remain in pending records after touchdown.
+
+Finite heights at or below/above the clipping bounds count as lower/upper
+saturation, including equality. Saturation fractions divide by finite points;
+invalid fraction divides by total points. Zero finite points gives zero
+saturation fractions and an explicit zero finite count. These diagnostics do
+not affect observations, labels, validity, rewards or learning.
+
+`summary.json.scan_diagnostics` reports available/missing sample counts and
+point-weighted totals/fractions for both scopes; it does not average per-sample
+ratios. Missing diagnostics in old packets remain supported: PT uses an explicit
+availability flag, CSV leaves unavailable diagnostic cells blank, and summaries
+use `available=false`, zero counts and null fractions when no diagnostic samples
+exist. The same representation is used for empty runs; no NaN is emitted.
+
+### Sampling contract
+
+The noiseless root-relative Actor scan is copied at liftoff. Each foot can
+continue a new swing while older contacts await their survival outcome. The
+environment samples once per control step before automatic reset, and publishes
+the packet after reset. Reading observations never advances the tracker.
+
+At the default 50 Hz, Python `round` gives 12 outcome frames and 25 survival
+steps. Touchdown is outcome frame one / survival age zero; the positive survival
+label becomes available 25 control steps later. There are 14 pending slots per
+foot by default. Slot capacity is derived from the survival window; explicitly
+smaller capacities report overflow rather than replacing existing records.
+
+`extras["auxiliary"]` uses this fixed tensor interface on the environment device:
+
+```text
+valid                         (N, 2, P)             bool
+height_scan                   (N, 2, P, 1, H, W)    float32
+query_xy, foot_side            (N, 2, P, 2)          float32
+command, base_ang_vel,
+projected_gravity              (N, 2, P, 3)          float32
+target                        (N, 2, P, 1)          float32
+observed_frames               (N, 2, P)             int64
+partial_window                (N, 2, P)             bool
+slip_mean, tilt_change,
+persistence, survival,
+slip_score, tilt_score,
+peak_force                    (N, 2, P)             float32
+```
+
+The foot axis is left then right; `foot_side` is a corresponding one-hot.
+Query xy is in metres in the liftoff root's yaw frame, not relative to the scan
+centre. Command and angular velocity are physical unscaled values, angular
+velocity/gravity are body-frame values. Height scan alone uses Stage 2 physical
+clip/scale preprocessing. Invalid slots are zero. Returned packets own their
+data and survive subsequent steps/resets. A future rollout buffer should select
+`packet[key][packet["valid"]]`, flattening all three leading axes. The tracker
+contains unfinished physical events, not replay data used for learning.
+
+`extras["interaction_stats"]` contains cumulative GPU scalar event/drop counts,
+current pending count, and peak pending count per foot. Explicit reset clears
+the selected environment's live state and old output, while keeping cumulative
+statistics. Automatic reset preserves just-finalized samples for that step.
+
+### Label interpretation
+
+- Contact uses positive world-z force greater than 20 N, a support-force proxy.
+  Link position and velocity both refer to the named ankle-roll link frame;
+  the query is not an estimated centre of pressure or a sole contact point.
+- Slip is mean horizontal speed over contacted outcome frames. Tilt is the
+  maximum wrapped roll/pitch change relative to touchdown. Contact persistence
+  divides contacted frames by the full outcome window.
+- Target is `0.40*exp(-slip/0.15) + 0.25*exp(-tilt/0.20) +
+  0.20*persistence + 0.15*survival`, clamped to `[0,1]`.
+- A fall immediately finalizes valid contacts, including early partial windows.
+  Missing contact frames count as zero persistence; slip/tilt use only observed
+  frames. Such samples carry `partial_window=True`. Timeout is not a fall;
+  incomplete timeout/manual-reset samples are discarded. A failure before a
+  valid touchdown never invents a query or a label.
+- Terrain metadata is never used for labels. Peak force is diagnostic only.
+  An early-fall target need not equal zero because it combines four scores.
+
+### Stage 3 verification
+
+All tests remain non-training:
+
+```powershell
+conda run --no-capture-output -n env_isaaclab python -u -m pytest `
+  isal\tests -q --tb=short -p no:cacheprovider
+```
+
+The simulator and pytest need access to their normal USD/Kit and temporary
+cache directories. Each Stage 3 simulation case runs in a fresh subprocess,
+also explicitly through `conda run -n env_isaaclab python`. This avoids local
+Isaac Sim stalls on repeated scene creation and config validation traversing
+the previous RayCaster mesh cache into Warp runtime cycles. No upstream source
+or global runtime class is patched. See `STAGE3_ACCEPTANCE.md` for results and
+remaining gates.
+
+The 2026-09-07 perception improvements and their verification are recorded in
+`PERCEPTION_IMPROVEMENTS_ACCEPTANCE.md`. Earlier stage acceptance records remain
+historical records of the earlier implementation and preprocessing values.

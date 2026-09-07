@@ -44,7 +44,7 @@ def test_height_scan_environment_and_runner_smoke(isaac_app) -> None:
     assert dones.shape == (1,)
     assert torch.isfinite(obs["height_scan"]).all()
     assert torch.isfinite(rewards).all()
-    assert obs["height_scan"].min() >= -1.6
+    assert obs["height_scan"].min() >= -3.0
     assert obs["height_scan"].max() <= 0.8
     assert {"log", "time_outs"}.issubset(extras)
 

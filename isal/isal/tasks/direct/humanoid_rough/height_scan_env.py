@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import torch
 
+from isal.interaction.scan_diagnostics import raw_height_masks, diagnostic_counts, diagnostic_fractions
+
 from .base_env import ISALHumanoidEnv
 from .height_scan import (
     flat_ray_order_to_xy_grid,
@@ -17,6 +19,20 @@ class ISALHumanoidHeightScanEnv(ISALHumanoidEnv):
     """Expose a current root-relative terrain scan separately from proprio history."""
 
     cfg: ISALHumanoidRoughHeightScanEnvCfg
+
+    def __init__(self, cfg: ISALHumanoidRoughHeightScanEnvCfg, render_mode: str | None = None, **kwargs):
+        self._is_closed = True
+        self.perceptive_observation_layout = cfg.resolve_perception_layout()
+        self._height_scan_grid_shape = self.perceptive_observation_layout.grid_shape
+        super().__init__(cfg, render_mode=render_mode, **kwargs)
+        actual_shape = infer_height_scan_grid_shape(self.height_scanner.ray_starts[0, :, :2])
+        if actual_shape != self.height_scan_grid_shape:
+            raise ValueError(f"Resolved scan grid {self.height_scan_grid_shape} != actual sensor grid {actual_shape}.")
+
+    def compute_current_observations(self):
+        actor, critic = super().compute_current_observations()
+        self.perceptive_observation_layout.validate_current(actor, critic)
+        return actor, critic
 
     @property
     def height_scan_grid_shape(self) -> tuple[int, int]:
@@ -40,7 +56,19 @@ class ISALHumanoidHeightScanEnv(ISALHumanoidEnv):
             self.height_scan_grid_shape,
             self.height_scanner.cfg.pattern_cfg.ordering,
         )
+        raw_grid = flat_ray_order_to_xy_grid(
+            self.height_scanner.data.ray_hits_w[..., 2] - self.robot.data.root_pos_w[:, 2, None],
+            self.height_scan_grid_shape, self.perceptive_observation_layout.ordering,
+        )[:, 0]
+        # Diagnostics use raw heights; failed rays are not finite lower saturation.
+        self.height_scan_diagnostic_masks = raw_height_masks(
+            raw_grid, perception_cfg.min_height, perception_cfg.max_height)
         return clean_native, clean_grid
+
+    def height_scan_diagnostics(self) -> dict[str, torch.Tensor]:
+        """Current scan point totals on device; observation reads do not accumulate counts."""
+        counts = {key: value.sum() for key, value in diagnostic_counts(self.height_scan_diagnostic_masks).items()}
+        return {**counts, **diagnostic_fractions(counts)}
 
     def _actor_height_scan(self, clean_grid: torch.Tensor) -> torch.Tensor:
         """Apply Actor-only perception noise and return the canonical flattened view."""

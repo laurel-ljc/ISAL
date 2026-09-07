@@ -32,6 +32,7 @@
 from isaaclab.managers import RewardTermCfg as RewTerm
 from isaaclab.managers.scene_entity_cfg import SceneEntityCfg
 from isaaclab.utils import configclass
+from isal.interaction import SelfSupervisedCfg
 
 from isal.tasks.direct.humanoid_rough import mdp
 from isal.tasks.direct.humanoid_rough.base_config import (
@@ -51,6 +52,7 @@ from isal.tasks.direct.humanoid_rough.base_config import (
 )
 from isal.tasks.direct.humanoid_rough.scene_cfg import SceneCfg
 from isal.tasks.direct.humanoid_rough.terrain_perception_cfg import TerrainPerceptionCfg
+from isal.tasks.direct.humanoid_rough.height_scan import PerceptiveObservationLayout, infer_height_scan_grid_shape
 from isal.tasks.direct.humanoid_rough.terrain_generator_cfg import (
     GRAVEL_TERRAINS_CFG,
     ROUGH_HARD_TERRAINS_CFG,
@@ -248,3 +250,32 @@ class ISALHumanoidRoughHeightScanEnvCfg(ISALHumanoidRoughEnvCfg):
             physics_dt=self.sim.dt,
             step_dt=self.decimation * self.sim.dt,
         )
+        self.resolve_perception_layout()
+
+    def resolve_perception_layout(self) -> PerceptiveObservationLayout:
+        """Resolve final CLI/config overrides before Gym spaces and buffers exist."""
+        perception = self.terrain_perception
+        perception.validate_values()
+        scanner = self.scene.height_scanner
+        scanner.pattern_cfg.size = perception.size
+        scanner.pattern_cfg.resolution = perception.resolution
+        scanner.offset.pos = (perception.offset_x, 0.0, 20.0)
+        self.scene_context.height_scanner.size = perception.size
+        self.scene_context.height_scanner.resolution = perception.resolution
+        self.scene_context.height_scanner.offset = scanner.offset.pos
+        # Use Isaac Lab's actual pattern, including its endpoint/rounding rules.
+        starts, _ = scanner.pattern_cfg.func(scanner.pattern_cfg, "cpu")
+        layout = PerceptiveObservationLayout(
+            infer_height_scan_grid_shape(starts[:, :2]), scanner.pattern_cfg.ordering,
+            self.robot.actor_obs_history_length, self.robot.critic_obs_history_length,
+        )
+        self.observation_space = layout.actor_frame_dim
+        self.state_space = layout.critic_frame_dim
+        return layout
+
+
+@configclass
+class ISALHumanoidRoughInteractionEnvCfg(ISALHumanoidRoughHeightScanEnvCfg):
+    """The same perceptive PPO environment, with optional label collection."""
+
+    self_supervised: SelfSupervisedCfg = SelfSupervisedCfg()

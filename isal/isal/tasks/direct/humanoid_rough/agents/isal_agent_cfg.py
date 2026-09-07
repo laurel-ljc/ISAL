@@ -42,7 +42,9 @@ from tensordict import TensorDict
 from functools import lru_cache
 
 from isal.tasks.direct.humanoid_rough.base_config import BaseAgentCfg
-from isal.tasks.direct.humanoid_rough.height_scan import mirror_flat_height_scan
+from isal.tasks.direct.humanoid_rough.height_scan import (
+    mirror_flat_height_scan, mirror_native_height_scan, restore_observation_history,
+)
 
 
 def generate_height_scan_mirror(start_idx=140, rows=11, cols=17):
@@ -145,16 +147,53 @@ def mirror_height_scan_observation(env, height_scan):
     base_env = getattr(env, "unwrapped", env)
     return mirror_flat_height_scan(height_scan, base_env.height_scan_grid_shape)
 
+
+@lru_cache(maxsize=None)
+def get_state_mirror_tensors(device, dtype):
+    """Single-frame maps only; history length and terrain size are resolved at runtime."""
+    return (
+        torch.tensor(policy_obs_mirror_indices, device=device),
+        torch.tensor(policy_obs_mirror_signs, device=device, dtype=dtype),
+        torch.tensor(critic_obs_mirror_indices[:139], device=device),
+        torch.tensor(critic_obs_mirror_signs[:139], device=device, dtype=dtype),
+    )
+
+
+def mirror_perceptive_observations(env, obs):
+    base_env = getattr(env, "unwrapped", env)
+    layout = base_env.perceptive_observation_layout
+    result = obs.clone()
+    values = obs["policy"]
+    actor_indices, actor_signs, _, _ = get_state_mirror_tensors(values.device, values.dtype)
+    history = restore_observation_history(values, layout.actor_history_length, layout.actor_frame_dim, "Actor")
+    result["policy"] = (history[..., actor_indices] * actor_signs).flatten(start_dim=1)
+    if "height_scan" in obs.keys():
+        result["height_scan"] = mirror_flat_height_scan(obs["height_scan"], layout.grid_shape)
+    if "critic" in obs.keys():
+        values = obs["critic"]
+        _, _, critic_indices, critic_signs = get_state_mirror_tensors(values.device, values.dtype)
+        history = restore_observation_history(values, layout.critic_history_length, layout.critic_frame_dim, "Critic")
+        state = history[..., :layout.critic_state_dim]
+        scan = history[..., layout.critic_state_dim:]
+        scan = mirror_native_height_scan(scan.reshape(-1, layout.num_rays), layout.grid_shape, layout.ordering)
+        mirrored = torch.cat((state[..., critic_indices] * critic_signs, scan.reshape_as(history[..., layout.critic_state_dim:])), -1)
+        result["critic"] = mirrored.flatten(start_dim=1)
+    return result
+
 def data_augmentation_func(env, obs, actions):
     if obs is None:
         obs_aug = None
     else:
-        obs_mirror = obs.clone()
-        obs_mirror["policy"] = mirror_policy_observation(obs["policy"])
-        if "height_scan" in obs.keys():
-            obs_mirror["height_scan"] = mirror_height_scan_observation(env, obs["height_scan"])
-        if "critic" in obs.keys():
-            obs_mirror["critic"] = mirror_critic_observation(obs["critic"])
+        if hasattr(getattr(env, "unwrapped", env), "perceptive_observation_layout"):
+            obs_mirror = mirror_perceptive_observations(env, obs)
+        else:
+            # Preserve the Stage 1 baseline path and its observation contract.
+            obs_mirror = obs.clone()
+            obs_mirror["policy"] = mirror_policy_observation(obs["policy"])
+            if "height_scan" in obs.keys():
+                obs_mirror["height_scan"] = mirror_height_scan_observation(env, obs["height_scan"])
+            if "critic" in obs.keys():
+                obs_mirror["critic"] = mirror_critic_observation(obs["critic"])
         obs_aug = torch.cat([obs, obs_mirror], dim=0)
     if actions is None:
         actions_aug = None
@@ -243,3 +282,14 @@ class ISALHumanoidRoughHeightScanAgentCfg(ISALHumanoidRoughAgentCfg):
         self.experiment_name = "isal_humanoid_rough_height_scan"
         self.neptune_project = "isal_humanoid_rough_height_scan"
         self.wandb_project = "isal_humanoid_rough_height_scan"
+
+
+@configclass
+class ISALHumanoidRoughInteractionAgentCfg(ISALHumanoidRoughHeightScanAgentCfg):
+    """Ordinary PPO; Stage 3 collects labels but never optimizes an auxiliary loss."""
+
+    def __post_init__(self):
+        super().__post_init__()
+        self.experiment_name = "isal_humanoid_rough_interaction"
+        self.neptune_project = "isal_humanoid_rough_interaction"
+        self.wandb_project = "isal_humanoid_rough_interaction"

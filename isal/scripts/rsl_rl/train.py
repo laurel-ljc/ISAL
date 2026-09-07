@@ -387,7 +387,10 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
             ),
         }
         if "height_scan" in obs:
-            height, width = env.unwrapped.height_scan_grid_shape
+            layout = env.unwrapped.perceptive_observation_layout
+            height, width = layout.grid_shape
+            expected_shapes["policy"] = (env.num_envs, layout.actor_frame_dim * layout.actor_history_length)
+            expected_shapes["critic"] = (env.num_envs, layout.critic_frame_dim * layout.critic_history_length)
             expected_shapes["height_scan"] = (env.num_envs, height * width)
         actual_shapes = {key: tuple(obs[key].shape) for key in expected_shapes}
         if actual_shapes != expected_shapes:
@@ -422,6 +425,16 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
                 )
             print("[VALIDATION] height_scan_grid_shape=", tuple(scan_grid.shape))
             print("[VALIDATION] height_scan_range=", (float(scan_grid.min()), float(scan_grid.max())))
+            print("[VALIDATION] height_scan_diagnostics=", {
+                key: value.item() for key, value in env.unwrapped.height_scan_diagnostics().items()})
+            symmetry = agent_cfg.algorithm.symmetry_cfg
+            if symmetry is not None:
+                augmented, augmented_actions = symmetry.data_augmentation_func(env, obs, actions)
+                if any(augmented[key].shape != (2 * env.num_envs, *value.shape[1:]) for key, value in obs.items()):
+                    raise RuntimeError("Validation failed: augmentation changed an observation feature dimension.")
+                if augmented_actions.shape != (2 * env.num_envs, actions.shape[1]):
+                    raise RuntimeError("Validation failed: augmentation action shape mismatch.")
+                print("[VALIDATION] dynamic_augmentation=True")
         print("[VALIDATION] next_policy_shape=", tuple(next_obs["policy"].shape))
         print("[VALIDATION] reward_finite=True")
         print("[VALIDATION] dones_shape=", tuple(dones.shape))

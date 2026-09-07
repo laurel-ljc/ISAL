@@ -53,7 +53,7 @@ def test_height_scan_environment_only_changes_perception_contract(isaac_app) -> 
     assert perception.size == (1.6, 1.0)
     assert perception.resolution == 0.1
     assert perception.offset_x == 0.4
-    assert (perception.min_height, perception.max_height, perception.height_scale) == (-0.8, 0.4, 0.5)
+    assert (perception.min_height, perception.max_height, perception.height_scale) == (-1.5, 0.4, 0.5)
     assert (perception.noise_std, perception.dropout_prob) == (0.0, 0.0)
     assert candidate.action_space == 23
     assert candidate.observation_space == 78
