@@ -356,6 +356,11 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     # wrap around environment for rsl-rl
     env = RslRlVecEnvWrapper(env, clip_actions=agent_cfg.clip_actions)
 
+    # CNN models need the actual post-override sensor/history layout. Keep old
+    # task configurations untouched and let the standard RSL-RL resolver load it.
+    from isal.learning.config import bind_perceptive_model_config
+    bind_perceptive_model_config(env, agent_cfg)
+
     # create runner from rsl-rl
     if agent_cfg.class_name == "OnPolicyRunner":
         runner = OnPolicyRunner(env, agent_cfg.to_dict(), log_dir=log_dir, device=agent_cfg.device)

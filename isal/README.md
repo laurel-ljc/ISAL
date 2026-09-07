@@ -245,3 +245,99 @@ remaining gates.
 The 2026-09-07 perception improvements and their verification are recorded in
 `PERCEPTION_IMPROVEMENTS_ACCEPTANCE.md`. Earlier stage acceptance records remain
 historical records of the earlier implementation and preprocessing values.
+
+## Stage 4A: CNN policy and training-only query head
+
+Two additional tasks use the same interaction environment and ordinary PPO:
+
+| Task | Tracker | Query head | Auxiliary optimization |
+|---|---|---|---|
+| `ISAL-Humanoid-Rough-CNN-v0` | Off | Absent | Off |
+| `ISAL-Humanoid-Rough-CNN-Aux-v0` | On | Present | Off |
+
+**Stage 4A does not train the head.** Its effective auxiliary coefficient is zero
+because ordinary PPO's auxiliary loss is disabled. The Aux task only exposes
+interaction packets and a callable predictor. Current-rollout storage, loss
+integration, and schedules belong to Stage 5. Predicted affordance does not enter
+the Actor; this is not the Stage 4B affordance-observation policy.
+
+Actor input remains proprio history plus a separate canonical flattened scan.
+The model restores the actual grid for its CNN. The Critic retains every history
+frame, converts each native-order clean scan to the canonical grid, and encodes
+each frame with a Critic-only CNN. Actor/Critic parameters and state normalizers
+are independent. Only the query head shares the Actor terrain encoder.
+
+Scans use only `clamp(terrain_z-root_z, -1.5, 0.4)/0.5`. Running normalization is
+explicitly enabled for proprio/critic non-scan history only. Query context uses
+the Stage 3 physical-unit snapshot, not a slice of normalized Actor history.
+`predict_affordance(batch)` accepts valid samples flattened across `[N,2,P]`;
+it never consumes targets as inputs or updates normalization/distribution state.
+
+### Parameters and model construction
+
+- `isal/learning/config.py`: convolution channels/kernels/strides/padding,
+  terrain FC/latent dimensions, proprio/Critic-state/head hidden dimensions.
+- `tasks/direct/humanoid_rough/agents/affordance_agent_cfg.py`: body hidden
+  dimensions, explicit normalization flags, action distribution, head switch,
+  and ordinary PPO inheritance. Network overrides use `agent.policy.network.*`.
+- `tasks/direct/humanoid_rough/terrain_perception_cfg.py`: scan geometry and
+  physical preprocessing; `interaction/config.py`: unchanged sampling/labels.
+
+The project training entrypoint calls
+`bind_perceptive_model_config(env, agent_cfg)` after constructing the actual
+environment and before the runner. Custom callers must do the same. This binds
+the final grid, native ordering, histories and preprocessing after all overrides;
+the model refuses an absent/mismatched layout. Other task configurations are not
+changed by this bridge. RSL-RL resolves the model by its fully qualified class
+name; no upstream registry or source patch is required.
+
+Safe local validation (one inferred action and one **zero-action** environment
+step; no learning):
+
+```powershell
+conda run --no-capture-output -n env_isaaclab python -u `
+  isal/scripts/rsl_rl/train.py --task ISAL-Humanoid-Rough-CNN-v0 `
+  --headless --num_envs 1 --validate-only
+
+conda run --no-capture-output -n env_isaaclab python -u `
+  isal/scripts/rsl_rl/train.py --task ISAL-Humanoid-Rough-CNN-Aux-v0 `
+  --headless --num_envs 1 --validate-only `
+  'env.terrain_perception.size=[1.8,1.0]' `
+  env.robot.actor_obs_history_length=3 env.robot.critic_obs_history_length=4 `
+  env.scene.height_scanner.pattern_cfg.ordering=yx
+```
+
+### Checkpoint and actor-only export
+
+Model state contains layout, preprocessing, network and variant metadata plus
+normalizer buffers. The current runner saves/restores this with optimizer state
+and iteration. Old MLP checkpoints, a changed grid/ordering/preprocessing, or a
+different head variant are rejected; there is no implicit migration.
+
+Export without launching Isaac Sim or updating weights:
+
+```powershell
+conda run -n env_isaaclab python isal/scripts/export_actor.py `
+  --checkpoint outputs/stage4a_acceptance/baseline_default/untrained_checkpoint.pt `
+  --output outputs/stage4a_acceptance/cli_export
+```
+
+The output contains `actor.pt` (TorchScript), `actor.onnx` (opset 17), and
+`metadata.json`. Both formats take `policy[B,78*history]` and
+`height_scan[B,H*W]` in **already clipped/scaled canonical x/y order**, returning
+`action_mean[B,23]`. Feature dimensions are fixed per checkpoint; batch is dynamic.
+The exported graph includes state normalization and both Actor encoders, but no
+Critic, query head, or stochastic distribution. Action scaling/PD remain outside
+the graph. These acceptance checkpoints are **untrained**, not walking policies.
+
+### Stage 4A verification
+
+```powershell
+conda run --no-capture-output -n env_isaaclab python -u -m pytest `
+  isal/tests/stage4a -q --tb=short -p no:cacheprovider
+```
+
+CPU/CUDA tests use synthetic forward/backward passes only. Simulator cases run
+in independent processes, patch learning/update/optimizer entrypoints to fail
+if called, and use at most two environments and 40 fixed zero-action steps each.
+See `STAGE4A_ACCEPTANCE.md` for actual results, artifacts and remaining gates.

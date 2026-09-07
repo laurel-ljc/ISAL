@@ -279,3 +279,17 @@ class ISALHumanoidRoughInteractionEnvCfg(ISALHumanoidRoughHeightScanEnvCfg):
     """The same perceptive PPO environment, with optional label collection."""
 
     self_supervised: SelfSupervisedCfg = SelfSupervisedCfg()
+
+
+@configclass
+class ISALHumanoidRoughCNNEnvCfg(ISALHumanoidRoughInteractionEnvCfg):
+    """Stage 4A baseline; same environment with interaction collection disabled."""
+
+    self_supervised: SelfSupervisedCfg = SelfSupervisedCfg(enabled=False)
+
+
+@configclass
+class ISALHumanoidRoughCNNAuxEnvCfg(ISALHumanoidRoughCNNEnvCfg):
+    """Stage 4A Aux-only: collect labels, but ordinary PPO does not consume them."""
+
+    self_supervised: SelfSupervisedCfg = SelfSupervisedCfg(enabled=True)
