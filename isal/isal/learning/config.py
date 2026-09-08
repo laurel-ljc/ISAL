@@ -4,6 +4,14 @@ from dataclasses import asdict, dataclass, field
 
 
 MODEL_CLASS = "isal.learning.models.affordance_actor_critic:AffordanceActorCritic"
+OBSERVATION_MODEL_CLASS = "isal.learning.models.affordance_observation_actor_critic:AffordanceObservationActorCritic"
+
+
+@dataclass
+class AffordanceObservationCfg:
+    input_mode: str = "predicted"
+    query_chunk_size: int = 64
+    input_gate: float = 0.0
 
 
 @dataclass
@@ -22,10 +30,10 @@ class AffordanceNetworkCfg:
 def bind_perceptive_model_config(env, agent_cfg) -> bool:
     """Bind final runtime geometry after Gym construction and before runner creation.
 
-    Only the Stage 4A model is affected. The serializable fields also accompany
+    Only project perceptive models are affected. The serializable fields also accompany
     saved agent YAML; no guessed square grid or module-level environment is used.
     """
-    if agent_cfg.policy.class_name != MODEL_CLASS:
+    if agent_cfg.policy.class_name not in (MODEL_CLASS, OBSERVATION_MODEL_CLASS):
         return False
     raw = getattr(env, "unwrapped", env)
     layout = asdict(raw.perceptive_observation_layout)
@@ -39,4 +47,17 @@ def bind_perceptive_model_config(env, agent_cfg) -> bool:
         "size": list(p.size), "resolution": p.resolution,
         "noise_std": p.noise_std, "dropout_prob": p.dropout_prob,
     }
+    if agent_cfg.policy.class_name == OBSERVATION_MODEL_CLASS:
+        from .models.dense_query import canonical_query_coordinates
+
+        # RayCaster ray_starts already includes its sensor offset. Only bind once
+        # after actual construction, and never add perception.offset_x again.
+        coordinates = canonical_query_coordinates(
+            raw.height_scanner.ray_starts[0, :, :2], tuple(layout["grid_shape"]))
+        agent_cfg.policy.query_coordinates = coordinates.cpu().tolist()
+        scales = raw.cfg.normalization.obs_scales
+        agent_cfg.policy.context_scales = {
+            "ang_vel": scales.ang_vel, "projected_gravity": scales.projected_gravity,
+            "commands": scales.commands,
+        }
     return True

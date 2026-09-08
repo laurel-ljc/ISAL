@@ -1,4 +1,4 @@
-"""Export a Stage 4A checkpoint without launching a simulator or updating weights."""
+"""Export a Stage 4A/4B checkpoint without launching a simulator or updating weights."""
 
 from __future__ import annotations
 
@@ -13,15 +13,16 @@ if project not in sys.path:
 import torch
 from tensordict import TensorDict
 
-from isal.learning.models import AffordanceActorCritic
+from isal.learning.models import AffordanceActorCritic, AffordanceObservationActorCritic
 
 
-def export_checkpoint(checkpoint: str, output: str):
+def load_checkpoint_model(checkpoint: str):
+    """Reconstruct a metadata-bound model on CPU without launching Isaac Sim."""
     saved = torch.load(checkpoint, map_location="cpu", weights_only=True)
     state = saved.get("model_state_dict", saved)
     metadata = state.get("_extra_state")
-    if not isinstance(metadata, dict) or metadata.get("stage") != "4A":
-        raise ValueError("Expected a Stage 4A CNN checkpoint with model metadata; old MLP models are not migrated.")
+    if not isinstance(metadata, dict) or metadata.get("stage") not in ("4A", "4B"):
+        raise ValueError("Expected a Stage 4A/4B checkpoint with model metadata; old MLP models are not migrated.")
     layout = metadata["layout"]
     rays = layout["grid_shape"][0] * layout["grid_shape"][1]
     obs = TensorDict({
@@ -33,10 +34,19 @@ def export_checkpoint(checkpoint: str, output: str):
         "obs_groups", "num_actions", "network", "activation", "actor_hidden_dims", "critic_hidden_dims",
         "actor_obs_normalization", "critic_obs_normalization", "affordance_head_enabled", "scan_preprocessing",
     )}
-    model = AffordanceActorCritic(obs, observation_layout=layout, **kwargs)
+    model_class = AffordanceActorCritic
+    if metadata["stage"] == "4B":
+        model_class = AffordanceObservationActorCritic
+        kwargs.update({key: metadata[key] for key in
+                       ("affordance_observation", "query_coordinates", "context_scales")})
+    model = model_class(obs, observation_layout=layout, **kwargs)
     model.load_state_dict(state)
     model.eval()
-    return model.export_actor(output)
+    return model
+
+
+def export_checkpoint(checkpoint: str, output: str):
+    return load_checkpoint_model(checkpoint).export_actor(output)
 
 
 if __name__ == "__main__":

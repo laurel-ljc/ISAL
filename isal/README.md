@@ -341,3 +341,109 @@ CPU/CUDA tests use synthetic forward/backward passes only. Simulator cases run
 in independent processes, patch learning/update/optimizer entrypoints to fail
 if called, and use at most two environments and 40 fixed zero-action steps each.
 See `STAGE4A_ACCEPTANCE.md` for actual results, artifacts and remaining gates.
+
+## Stage 4B: full-grid affordance as an Actor input
+
+| Task | Control features | Tracker/head | Auxiliary optimization |
+|---|---|---|---|
+| `ISAL-Humanoid-Rough-AffordanceObs-v0` | Detached current full-grid scores | On | Off |
+| `ISAL-Humanoid-Rough-AffordanceZero-v0` | Permanent zeros | On | Off |
+
+Both tasks keep Stage 4A's environment, Actor/Critic body, ordinary PPO and
+symmetry. The zero-input control has identical parameter shapes; this alone does
+not eliminate differences in effective network capacity. Existing 4A tasks retain
+their original behavior. **There is no auxiliary optimizer, buffer or schedule in
+Stage 4B.** The head is untrained until a later stage supplies auxiliary learning.
+
+Each Actor call encodes its current scan once, then queries both feet at every
+actual ray origin (including the existing sensor offset) in current root yaw
+coordinates. Scores have shape `[B,2,H,W]`, flattened left foot first. Dense
+queries run in chunks of 64 without gradients and reuse the terrain latent.
+Context comes from angular velocity, gravity and command in the latest raw,
+noisy Actor history frame, divided by the bound observation scales. It never
+uses running-normalized history, Critic observations or pending tracker samples.
+
+A bias-free `Linear(2*H*W,256)` projects
+`input_gate * (2 * detached_scores - 1)` into the original Actor's first linear
+output, before ELU. PPO can update this projection and the direct Actor terrain
+path; it cannot update the head. Auxiliary prediction retains the Stage 4A API
+and only shares the terrain encoder. Critic is unchanged and independent.
+
+`input_gate` is a checkpointed scalar buffer, **default 0**. Set it explicitly with
+`model.set_affordance_input_gate(value)` for values in `[0,1]`; no automatic
+schedule exists. Predicted mode still computes the full grid at gate 0. Zero
+mode always uses zeros and skips control prediction, regardless of gate; its
+`predict_affordance_grid(obs)` diagnostic still returns detached predictions.
+Mirroring transforms the original observations and then recomputes predictions.
+Do not mirror the recomputed scores a second time.
+
+### Configuration and local validation
+
+`isal/learning/config.py::AffordanceObservationCfg` defines the input mode, gate
+and chunk size. Agent configuration overrides are:
+
+- `agent.policy.affordance_observation.input_gate=1.0`
+- `agent.policy.affordance_observation.query_chunk_size=64`
+- `agent.policy.affordance_observation.input_mode=predicted` (or `zero`)
+
+The existing binding function additionally supplies actual ray coordinates and
+observation scales for 4B only. Do not hand-enter inferred grid coordinates.
+Common network and perception parameters remain in their Stage 4A locations.
+
+These commands validate full inference but **step the environment with zeros**;
+they do not execute a random-head policy in closed loop:
+
+```powershell
+conda run --no-capture-output -n env_isaaclab python -u `
+  isal/scripts/rsl_rl/train.py --task ISAL-Humanoid-Rough-AffordanceObs-v0 `
+  --headless --num_envs 1 --validate-only `
+  agent.policy.affordance_observation.input_gate=1.0
+
+conda run --no-capture-output -n env_isaaclab python -u `
+  isal/scripts/rsl_rl/train.py --task ISAL-Humanoid-Rough-AffordanceZero-v0 `
+  --headless --num_envs 1 --validate-only
+
+conda run --no-capture-output -n env_isaaclab python -u `
+  isal/scripts/rsl_rl/train.py --task ISAL-Humanoid-Rough-AffordanceObs-v0 `
+  --headless --num_envs 1 --validate-only `
+  'env.terrain_perception.size=[1.8,1.0]' `
+  env.robot.actor_obs_history_length=3 env.robot.critic_obs_history_length=4 `
+  env.scene.height_scanner.pattern_cfg.ordering=yx `
+  env.normalization.obs_scales.ang_vel=2.0 `
+  env.normalization.obs_scales.projected_gravity=3.0 `
+  env.normalization.obs_scales.commands=4.0 `
+  agent.policy.affordance_observation.input_gate=1.0
+```
+
+### Checkpoint, export and inference overhead
+
+4B checkpoints require the same metadata version, input mode, query coordinates,
+scales, network and scan definition. They restore the actual gate, weights and
+normalizers. 4A-to-4B migration and cross-mode loading are intentionally rejected.
+The export CLI dispatches by metadata and still supports 4A:
+
+```powershell
+conda run -n env_isaaclab python isal/scripts/export_actor.py `
+  --checkpoint outputs/stage4b_acceptance/predicted_default/untrained_checkpoint.pt `
+  --output outputs/stage4b_acceptance/cli_export
+
+conda run -n env_isaaclab python isal/scripts/benchmark_affordance.py `
+  --checkpoint outputs/stage4b_acceptance/predicted_default/untrained_checkpoint.pt `
+  --output outputs/stage4b_acceptance/benchmark.json
+
+conda run --no-capture-output -n env_isaaclab python -u -m pytest `
+  isal/tests -q --tb=short -p no:cacheprovider
+```
+
+TorchScript and ONNX opset 17 retain the same two input tensors as 4A and support
+dynamic batch. Predicted mode includes head, context adapter, queries, projection
+and the **saved gate**, even at gate 0. Zero-mode export omits the permanently
+ineffective head/projection. Neither includes Critic. Export does not change gate.
+The benchmark explicitly uses gate 1 in memory, measures the full Actor path
+with batch 1 on CPU/CUDA, and does not rewrite the checkpoint or update weights.
+
+Acceptance checkpoints are untrained engineering artifacts. In particular,
+current-phase inference versus liftoff-only supervision, and noisy control context
+versus clean tracker context, require external training experiments. Random-head
+mirror errors and inference overhead do not establish learning quality. See
+`STAGE4B_ACCEPTANCE.md` for measured results and artifact locations.

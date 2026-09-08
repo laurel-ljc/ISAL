@@ -417,6 +417,14 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
         print("[VALIDATION] critic_shape=", tuple(obs["critic"].shape))
         print("[VALIDATION] action_shape=", tuple(actions.shape))
         print("[VALIDATION] actor_input_shape=", tuple(actor_input.shape))
+        if hasattr(runner.alg.policy, "predict_affordance_grid"):
+            with torch.inference_mode():
+                scores = runner.alg.policy.predict_affordance_grid(obs)
+            if not torch.isfinite(scores).all() or torch.any(scores < 0) or torch.any(scores > 1):
+                raise RuntimeError("Validation failed: invalid affordance grid scores.")
+            print("[VALIDATION] affordance_input_mode=", runner.alg.policy.input_mode)
+            print("[VALIDATION] affordance_input_gate=", float(runner.alg.policy.input_gate))
+            print("[VALIDATION] affordance_grid_shape=", tuple(scores.shape))
         if "height_scan" in obs:
             scan_grid = env.unwrapped.height_scan_grid
             perception_cfg = env.unwrapped.cfg.terrain_perception
