@@ -79,6 +79,19 @@ for _variant in ("AffordanceObs", "AffordanceZero"):
     )
 
 
+for _suffix, _agent in (("CNN", "CNN"), ("CNN-Aux", "CNNAux"),
+                         ("AffordanceObs", "AffordanceObs"), ("AffordanceZero", "AffordanceZero")):
+    gym.register(
+        id=f"ISAL-Humanoid-Rough-{_suffix}-Train-v0",
+        entry_point=f"{__name__}.interaction_env:ISALHumanoidInteractionEnv",
+        disable_env_checker=True,
+        kwargs={
+            "env_cfg_entry_point": f"{__name__}.isal_env_cfg:ISALHumanoidRough{'CNN' if _suffix == 'CNN' else 'AuxTrain'}EnvCfg",
+            "rsl_rl_cfg_entry_point": f"{agents.__name__}.training_agent_cfg:{_agent}TrainAgentCfg",
+        },
+    )
+
+
 __all__ = [
     "BaseAgentCfg",
     "BaseEnvCfg",

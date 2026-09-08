@@ -7,6 +7,7 @@ import math
 @dataclass
 class SelfSupervisedCfg:
     enabled: bool = True
+    emit_sample_timing: bool = False
     snapshot_mode: str = "liftoff"
     foot_body_names: tuple[str, str] = ("left_ankle_roll_link", "right_ankle_roll_link")
     contact_force_threshold: float = 20.0

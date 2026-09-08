@@ -293,3 +293,8 @@ class ISALHumanoidRoughCNNAuxEnvCfg(ISALHumanoidRoughCNNEnvCfg):
     """Stage 4A Aux-only: collect labels, but ordinary PPO does not consume them."""
 
     self_supervised: SelfSupervisedCfg = SelfSupervisedCfg(enabled=True)
+
+
+@configclass
+class ISALHumanoidRoughAuxTrainEnvCfg(ISALHumanoidRoughCNNAuxEnvCfg):
+    self_supervised: SelfSupervisedCfg = SelfSupervisedCfg(enabled=True,emit_sample_timing=True)

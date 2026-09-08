@@ -61,6 +61,9 @@ class FootInteractionTracker:
         self.prefix = (num_envs, 2, self.slots)
         self.active = self._zeros((), dtype=torch.bool)
         self.age = self._zeros((), dtype=torch.long)
+        self.sample_clock = 0
+        self.swing_snapshot_step = torch.zeros((num_envs, 2), dtype=torch.long, device=self.device)
+        self.pending_snapshot_step = self._zeros((), dtype=torch.long)
         self.observed = self._zeros((), dtype=torch.long)
         self.contact_count = self._zeros((), dtype=torch.long)
         self.slip_sum = self._zeros(())
@@ -89,10 +92,13 @@ class FootInteractionTracker:
         return torch.zeros((*self.prefix, *tail), dtype=dtype, device=self.device)
 
     def _empty_packet(self) -> dict[str, torch.Tensor]:
-        return {"valid": self._zeros((), torch.bool), "height_scan": self._zeros((1, *self.grid_shape)),
+        packet = {"valid": self._zeros((), torch.bool), "height_scan": self._zeros((1, *self.grid_shape)),
                 "query_xy": self._zeros((2,)), "foot_side": self._zeros((2,)),
                 "command": self._zeros((3,)), "base_ang_vel": self._zeros((3,)),
                 "projected_gravity": self._zeros((3,)), "target": self._zeros((1,))}
+        if self.cfg.emit_sample_timing:
+            packet.update(snapshot_step=self._zeros((), torch.long), finalized_step=self._zeros((), torch.long))
+        return packet
 
     def _count(self, name: str, mask: torch.Tensor) -> None:
         self.counters[name].add_(mask.sum())
@@ -100,7 +106,8 @@ class FootInteractionTracker:
     @torch.no_grad()
     def reset(self, env_ids: torch.Tensor, *, clear_output: bool = True) -> None:
         self.counters["incomplete"].add_(self.active[env_ids].sum() + self.swing_valid[env_ids].sum())
-        for value in (self.active, self.age, self.observed, self.contact_count, self.slip_sum,
+        for value in (self.active, self.age, self.swing_snapshot_step, self.pending_snapshot_step,
+                      self.observed, self.contact_count, self.slip_sum,
                       self.tilt_max, self.peak_force, self.touchdown_tilt, self.query,
                       self.initialized, self.previous_contact, self.swing_valid,
                       self.swing_scan_masks, self.swing_diagnostics_available,
@@ -125,6 +132,7 @@ class FootInteractionTracker:
                 or scan_diagnostic_masks.dtype != torch.bool or scan_diagnostic_masks.device != self.swing_scan_masks.device):
             raise ValueError("Scan diagnostic masks must be boolean (N,3,H,W) on the tracker device.")
         self.age.add_(self.active.long())
+        self.sample_clock += 1
         forces_finite = torch.isfinite(foot_force_w).all(-1)
         contact = (foot_force_w[..., 2].clamp_min(0) > self.cfg.contact_force_threshold) & forces_finite
         liftoff = self.initialized & self.previous_contact & ~contact & forces_finite
@@ -137,6 +145,7 @@ class FootInteractionTracker:
         for value in snapshot.values():
             snapshot_ok &= torch.isfinite(value.reshape(self.num_envs, -1)).all(-1)
         valid_liftoff = liftoff & snapshot_ok[:, None]
+        self.swing_snapshot_step = torch.where(valid_liftoff, self.sample_clock, self.swing_snapshot_step)
         self._count("nonfinite", liftoff & ~snapshot_ok[:, None])
         # Replace only the live swing, never an older pending outcome.
         for key, value in snapshot.items():
@@ -164,6 +173,7 @@ class FootInteractionTracker:
         self._count("overflow", candidate & ~has_free)
         insert = candidate & has_free
         index = (self._env_index, self._foot_index, slot)
+        self.pending_snapshot_step[index] = torch.where(insert, self.swing_snapshot_step, self.pending_snapshot_step[index])
         self._insert_diagnostics(index, insert, query)
         for key, value in self.swing.items():
             old = self.pending[key][index]
@@ -219,6 +229,9 @@ class FootInteractionTracker:
                     tilt_change=self.tilt_max, persistence=persistence, survival=survival,
                     slip_score=slip_score, tilt_score=tilt_score, peak_force=self.peak_force)
         data["scan_diagnostics_available"] = self.pending_diagnostics_available
+        if self.cfg.emit_sample_timing:
+            data.update(snapshot_step=self.pending_snapshot_step,
+                        finalized_step=torch.full_like(self.pending_snapshot_step, self.sample_clock))
         data.update(self.pending_diagnostics)
         for scope in SCOPES:
             counts = {name: self.pending_diagnostics[f"{scope}_{name}"] for name in COUNT_NAMES}

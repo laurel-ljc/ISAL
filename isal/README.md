@@ -447,3 +447,138 @@ current-phase inference versus liftoff-only supervision, and noisy control conte
 versus clean tracker context, require external training experiments. Random-head
 mirror errors and inference overhead do not establish learning quality. See
 `STAGE4B_ACCEPTANCE.md` for measured results and artifact locations.
+
+## Stage 5: current-rollout auxiliary learning
+
+Four new tasks use `isal.learning.affordance_runner:AffordanceRunner` and
+`isal.learning.ppo_affordance:PPOWithAffordance`. Earlier tasks remain unchanged.
+
+| Task suffix (after `ISAL-Humanoid-Rough-`) | Tracker/head | Auxiliary loss | Predicted control input |
+|---|---|---|---|
+| `CNN-Train-v0` | Off | Off | Absent |
+| `CNN-Aux-Train-v0` | On | On after warmup | Absent |
+| `AffordanceObs-Train-v0` | On | On after warmup | Scheduled gate |
+| `AffordanceZero-Train-v0` | On | On after warmup | Permanent zeros |
+
+Stage 5 supports **one CPU/CUDA device** and rejects distributed training, RND,
+recurrent policies and the unrelated upstream auxiliary hook. All four tasks
+share the existing environment, PPO and symmetry settings. No reward, label,
+terrain or curriculum change accompanies auxiliary learning.
+
+### Buffer and optimizer behavior
+
+Every physical step forwards newly finalized valid `[N,2,P]` contacts to a local
+buffer. Liftoff may predate the current rollout; tracker pending events survive
+learning boundaries. Sample timing diagnostics record this age. Only this rollout's
+newly finalized samples enter its buffer, which clears after the joint update.
+The buffer stores independent, detached tensors usable outside inference mode.
+
+At capacity, independent random priorities retain a uniform subset of contacts.
+An independent generator also samples auxiliary minibatches with replacement;
+auxiliary sampling never consumes the global PPO RNG. Each PPO minibatch computes
+the current full policy and adds `lambda_aux * SmoothL1(pred,target,beta=0.1)` to
+the existing loss before a single backward, clipping and Adam step. There is no
+separate auxiliary optimizer. Symmetry transforms original observations only.
+
+Auxiliary gradients reach Actor terrain encoder/head only; control predictions
+remain detached, so PPO cannot directly update the head. The head can nevertheless
+change the next full policy prediction as auxiliary learning changes its weights.
+Post-update probes measure this change; PPO clipping is not a hard bound on the
+combined auxiliary-induced policy change.
+
+### Parameters and schedules
+
+Defaults live in `isal/learning/training_config.py`; agent overrides live in
+`tasks/direct/humanoid_rough/agents/training_agent_cfg.py`.
+
+| Hydra field | Default |
+|---|---:|
+| `agent.algorithm.auxiliary_learning.enabled` | true except Baseline |
+| `agent.algorithm.auxiliary_learning.start_iteration` | 100 |
+| `agent.algorithm.auxiliary_learning.ramp_iterations` | 200 |
+| `agent.algorithm.auxiliary_learning.loss_coef` | 0.05 |
+| `agent.algorithm.auxiliary_learning.aux_batch_size` | 2048 |
+| `agent.algorithm.auxiliary_learning.min_samples_per_update` | 256 |
+| `agent.algorithm.auxiliary_learning.max_samples_per_rollout` | 16384 |
+| `agent.algorithm.auxiliary_learning.smooth_l1_beta` | 0.1 |
+| `agent.algorithm.auxiliary_learning.sampling_seed` | initial agent seed |
+| `agent.algorithm.affordance_gate_schedule.start_iteration` | 300 |
+| `agent.algorithm.affordance_gate_schedule.ramp_iterations` | 100 |
+| `agent.algorithm.affordance_gate_schedule.final` | 1.0 |
+| `agent.algorithm.diagnostics.enabled` | true |
+| `agent.algorithm.diagnostics.probe_size` | 256 |
+
+For `k = completed_updates`, each schedule is `final*clamp((k-start)/ramp,0,1)`.
+A zero-length ramp switches at `k >= start`. The runner applies both schedules
+before rollout collection and holds them constant through its update epochs.
+After an update, completed_updates increases; the next rollout applies the next
+values. Zero-input control always uses gate 0. Stage 5 owns the control gate;
+change its schedule rather than the Stage 4 model's initial gate setting.
+
+Aux disabled creates no buffer and no auxiliary backward graph. Enabled with
+coefficient 0 still collects statistics but skips auxiliary loss. Fewer than the
+minimum samples also skips that loss and logs a reason. Tracker enablement remains
+a separate environment setting; changing a coefficient does not switch it off.
+Sampling seed is explicit: when changing experiment seeds through CLI, override
+`agent.algorithm.auxiliary_learning.sampling_seed` too if a different auxiliary
+sample stream is desired.
+
+### Safe local commands
+
+Run these from the repository root. They only infer and perform **one zero-action
+step**; no learning/update/optimizer step is executed:
+
+```powershell
+conda run --no-capture-output -n env_isaaclab python -u `
+  isal/scripts/rsl_rl/train.py --task ISAL-Humanoid-Rough-CNN-Train-v0 `
+  --headless --num_envs 1 --validate-only
+
+conda run --no-capture-output -n env_isaaclab python -u `
+  isal/scripts/rsl_rl/train.py --task ISAL-Humanoid-Rough-AffordanceObs-Train-v0 `
+  --headless --num_envs 1 --validate-only `
+  'env.terrain_perception.size=[1.8,1.0]' `
+  env.scene.height_scanner.pattern_cfg.ordering=yx `
+  env.robot.actor_obs_history_length=3 env.robot.critic_obs_history_length=4 `
+  agent.algorithm.auxiliary_learning.loss_coef=0.01 `
+  agent.algorithm.auxiliary_learning.start_iteration=0 `
+  agent.algorithm.auxiliary_learning.ramp_iterations=0 `
+  agent.algorithm.affordance_gate_schedule.start_iteration=0 `
+  agent.algorithm.affordance_gate_schedule.ramp_iterations=0
+
+conda run --no-capture-output -n env_isaaclab python -u -m pytest `
+  isal/tests -q --tb=short -p no:cacheprovider
+```
+
+### Diagnostics, checkpoint and export
+
+The runner writes `stage5_metrics.jsonl`, console records and scalar writer tags.
+Records include completed updates and actual environment steps. All retained
+targets have distribution/count summaries; bounded probes report prediction
+histograms, MAE, valid/invalid correlation, subgroup metrics, action/prediction
+drift and post-update KL. Constant targets return `correlation=null` with
+`correlation_valid=false`. Auxiliary encoder/head gradients are measured on the
+first active minibatch, before coefficient weighting; combined norms are measured
+before clipping. Probe diagnostics never update normalization or distributions.
+
+Training checkpoints require the same Stage 5 model, algorithm, environment and
+input configuration. They save completed-update count, actual environment steps,
+timing, both schedules/current values, optimizer/adaptive learning rate and RNGs.
+Save is allowed only at complete update boundaries. Resume uses a fresh env reset
+and discards pending contacts and the learning buffer; it does not reproduce the
+old physical trajectory. A resumed checkpoint retains its actual saved gate until
+the next rollout boundary applies the next schedule value.
+
+The existing metadata-based export CLI accepts Stage 5 checkpoint model state:
+
+```powershell
+conda run --no-capture-output -n env_isaaclab python -u isal/scripts/export_actor.py `
+  --checkpoint outputs/stage5_acceptance/AffordanceObs/untrained_checkpoint.pt `
+  --output outputs/stage5_acceptance/cli_export
+```
+
+These acceptance artifacts are **untrained**. Synthetic checkpoint iteration
+fields test recovery and do not represent learning. Local tests exercise the
+production loss helper and backward, but deliberately do not call the actual
+optimization loop. External short training must establish locomotion learning,
+sample availability and stability through the fully open gate interval. See
+`STAGE5_ACCEPTANCE.md` for actual engineering results and limits.

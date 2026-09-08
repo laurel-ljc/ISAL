@@ -362,7 +362,13 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     bind_perceptive_model_config(env, agent_cfg)
 
     # create runner from rsl-rl
-    if agent_cfg.class_name == "OnPolicyRunner":
+    from isal.learning.training_config import RUNNER_CLASS
+    if agent_cfg.class_name == RUNNER_CLASS:
+        if args_cli.distributed:
+            raise ValueError("Stage 5 supports single-device execution only.")
+        from isal.learning.affordance_runner import AffordanceRunner
+        runner = AffordanceRunner(env, agent_cfg.to_dict(), log_dir=log_dir, device=agent_cfg.device)
+    elif agent_cfg.class_name == "OnPolicyRunner":
         runner = OnPolicyRunner(env, agent_cfg.to_dict(), log_dir=log_dir, device=agent_cfg.device)
     elif agent_cfg.class_name == "DistillationRunner":
         runner = DistillationRunner(env, agent_cfg.to_dict(), log_dir=log_dir, device=agent_cfg.device)
@@ -372,6 +378,8 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
         raise ValueError(f"Unsupported runner class: {agent_cfg.class_name}")
 
     if args_cli.validate_only:
+        if agent_cfg.class_name == RUNNER_CLASS:
+            runner.alg.begin_rollout()
         with torch.inference_mode():
             obs, reset_extras = env.reset()
             obs = obs.to(agent_cfg.device)
@@ -379,6 +387,10 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
             actions = inference_policy(obs)
             zero_actions = torch.zeros_like(actions, device=env.device)
             next_obs, rewards, dones, extras = env.step(zero_actions)
+            if agent_cfg.class_name == RUNNER_CLASS:
+                runner.alg.collect_auxiliary(extras)
+                print("[VALIDATION] stage5_coefficient=", runner.alg.coefficient)
+                print("[VALIDATION] stage5_environment_steps=", runner.alg.environment_steps)
         if not torch.isfinite(rewards).all():
             raise RuntimeError("Validation failed: reward contains non-finite values.")
         expected_shapes = {
