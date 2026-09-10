@@ -1,0 +1,126 @@
+[
+  {
+    "file": "README.md",
+    "sha256": "cfd4689e79dcd0a4a9c1a2385881130f8c1fbe92fadbf12a5614f586bf129fdb"
+  },
+  {
+    "file": "rpo_urdf.png",
+    "sha256": "1b09db9199f3e3c2acabc689e99155b64529f07677235be10e7ac36203397578"
+  },
+  {
+    "file": "meshes/base_link.STL",
+    "sha256": "cc5f70d409f54e134654f22328861765151edd7938d5c7ed37055f94d30cd7e4"
+  },
+  {
+    "file": "meshes/left_ankle_pitch_link.STL",
+    "sha256": "d27fa7d24ca84b1e77f78ba5bd51641873765be1c5f312388c8261300206c581"
+  },
+  {
+    "file": "meshes/left_ankle_roll_link.STL",
+    "sha256": "eeab108db067b4a011cf0840883bb4a42c2c4ec5e44ba9ec1fcfc3236bfe8369"
+  },
+  {
+    "file": "meshes/left_arm_pitch_link.STL",
+    "sha256": "dc50e2485bfba1badcb5982df4de4eef522334b3d75f96251e0e2442a1552365"
+  },
+  {
+    "file": "meshes/left_arm_roll_link.STL",
+    "sha256": "1ad23c026e600e585ca0cdd2ad321b182145e00878611ae51b7abfb599eefc36"
+  },
+  {
+    "file": "meshes/left_arm_yaw_link.STL",
+    "sha256": "c63d60e71f2ea97b81a1791877e7ac41062775126f00bef0cd288829fe75f8d0"
+  },
+  {
+    "file": "meshes/left_elbow_pitch_link.STL",
+    "sha256": "9802c158f64c830183aef2b13a9ebbb7885b206ee3c6f7221b91954087482c53"
+  },
+  {
+    "file": "meshes/left_elbow_yaw_link.STL",
+    "sha256": "e966e368c0ba1f8c6045e83adc65125810ce643fbe0c19471f7c9ea1f883f234"
+  },
+  {
+    "file": "meshes/left_knee_link.STL",
+    "sha256": "5d336bad6ae8c6ddd1796e50022beadce2752c6583ed2fddd677ba30045364c9"
+  },
+  {
+    "file": "meshes/left_thigh_pitch_link.STL",
+    "sha256": "e4a4f3c36fa56f6fbc0795bbfa3cbba3aa0ea90cdc88eb2289fd705dc3cfc3a1"
+  },
+  {
+    "file": "meshes/left_thigh_roll_link.STL",
+    "sha256": "a6cca26d25cd9366e7867e9f345ccae4a7e116419c1600421495510d15ff5b69"
+  },
+  {
+    "file": "meshes/left_thigh_yaw_link.STL",
+    "sha256": "e34b246a220b3ecf7c3f368516babe9aeca72834afde04cec2d852110d1d2035"
+  },
+  {
+    "file": "meshes/right_ankle_pitch_link.STL",
+    "sha256": "eb810162d459db1d37875f975be0571e6899eedcde2411a93ef2778d1212f33e"
+  },
+  {
+    "file": "meshes/right_ankle_roll_link.STL",
+    "sha256": "4f1dea6037fede1ca1e58e192438758783c756d138613137ba27060045aecd87"
+  },
+  {
+    "file": "meshes/right_arm_pitch_link.STL",
+    "sha256": "4e2e6173f8b649476db097463ea8800abf8a8af221bf75f16349193d7b50f340"
+  },
+  {
+    "file": "meshes/right_arm_roll_link.STL",
+    "sha256": "4969065336a5b7307769785c677723a490008ffb3df6862918a73edaaaf3e477"
+  },
+  {
+    "file": "meshes/right_arm_yaw_link.STL",
+    "sha256": "5091d0158ea772f4ec86fbca5e02837bd54b2cad9632826b71222ae31b9a43fc"
+  },
+  {
+    "file": "meshes/right_elbow_pitch_link.STL",
+    "sha256": "7fdf46bad0aeac7cc6aa21e91644c93d0126bf6cb4f70eeb79aae261144d9964"
+  },
+  {
+    "file": "meshes/right_elbow_yaw_link.STL",
+    "sha256": "77d18cf35afc3cefcade2aabc1f25ba20df4811c119126afd4a6165602ef1e92"
+  },
+  {
+    "file": "meshes/right_knee_link.STL",
+    "sha256": "398b1e8817caa088589807e3856a4e0fc8714d7664917a87a145c52f6b12e5ed"
+  },
+  {
+    "file": "meshes/right_thigh_pitch_link.STL",
+    "sha256": "825716854217570b62af687d0d24b4058b3c41dd59f95e376589ea91b40640de"
+  },
+  {
+    "file": "meshes/right_thigh_roll_link.STL",
+    "sha256": "b71a0b718a22f9fbe0c12bf28c7209b3a5490e486c42d6b94189ccab1746cd75"
+  },
+  {
+    "file": "meshes/right_thigh_yaw_link.STL",
+    "sha256": "741027c38006c319ca7682e6e28f6b13d903aca6e7bc7e7f00769571f93d740a"
+  },
+  {
+    "file": "meshes/torso_link.STL",
+    "sha256": "c0aef7f4c5eff6c469f868764dd5c0f5e037e3c44c86bffae7acf76cf6183d19"
+  },
+  {
+    "file": "mjcf/rpo.xml",
+    "sha256": "a6850d04365a78b14ca9f7ff4d0c526494faf16c8d607e74175e211b48409cc8"
+  },
+  {
+    "file": "mjcf/rpo_stairs.xml",
+    "sha256": "2978c8a7764c0fe18a7fb4f40cbd1693bd39117733a3784eb8b0625cd39e4e90"
+  },
+  {
+    "file": "mjcf/rpo_terrain.xml",
+    "sha256": "3c4601011ccfe68e429f8620d0601fe49ddc2b449f119b14c81b66d6581dd090"
+  },
+  {
+    "file": "terrain_assets/terrain_hfield.png",
+    "sha256": "67d4f056dc7122c12c766606b625ad44a14dc5e8c3dc6a436a8e40e73ea31dfa"
+  },
+  {
+    "file": "urdf/rpo.urdf",
+    "sha256": "27493b44dd5adeda87934235a3ba3389da8f3ee903c19be33344740921f99b9a"
+  }
+]

@@ -1,0 +1,2 @@
+recursive-include assets/data *
+include LICENSE-* README.md VALIDATION*.md

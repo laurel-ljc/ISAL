@@ -1,0 +1,14 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "isal2"
+version = "0.1.0"
+description = "Independent RPO perceptive locomotion tasks"
+requires-python = ">=3.11"
+dependencies = ["rsl-rl-lib==3.3.0", "torch>=2.6", "numpy", "tensordict>=0.7", "gymnasium", "tensorboard", "GitPython", "PyYAML"]
+
+[tool.setuptools.package-data]
+"*" = ["*.md", "*.toml"]
+"isal2.assets" = ["data/**/*", "manifest.json"]
