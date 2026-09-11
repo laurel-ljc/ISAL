@@ -155,6 +155,9 @@ class BaseEnv(DirectRLEnv):
     def _before_reset(self, env_ids):
         """Extension hook: terminal contact/pose and done flags are still available."""
 
+    def _after_termination_check(self):
+        """Post-physics frame with current done flags, before reward and reset."""
+
     def step(self, actions):
         self.extras = {"log": {}}
         self._pre_physics_step(actions)
@@ -172,6 +175,7 @@ class BaseEnv(DirectRLEnv):
         self._after_physics_step()
         self.reset_terminated[:], self.reset_time_outs[:] = self._get_dones()
         self.reset_buf = self.reset_terminated | self.reset_time_outs
+        self._after_termination_check()
         self.reward_buf = self._get_rewards()
         # Reward and curriculum use the command that produced this transition.
         ids = self.reset_buf.nonzero(as_tuple=False).flatten()

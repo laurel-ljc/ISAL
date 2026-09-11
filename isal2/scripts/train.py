@@ -30,6 +30,8 @@ def main():
     parser.add_argument("--terrain_cols", type=int)
     parser.add_argument("--smoke_steps", type=int, default=0, help="Validate environment instead of training")
     parser.add_argument("--check_reset", action="store_true", help="Exercise partial reset/timeout during smoke test")
+    parser.add_argument("--affordance_warmup", type=int, help="Override affordance gate warm-up iterations")
+    parser.add_argument("--affordance_ramp", type=int, help="Override affordance gate ramp iterations")
     AppLauncher.add_app_launcher_args(parser)
     args = parser.parse_args()
     if args.max_iterations < 1 or args.smoke_steps < 0:
@@ -62,6 +64,11 @@ def main():
         agent.seed, agent.device, agent.max_iterations = args.seed, args.device, args.max_iterations
         if hasattr(agent, "configure_from_env"):
             agent.configure_from_env(cfg)
+        for argument, key in ((args.affordance_warmup, "warmup_iterations"), (args.affordance_ramp, "ramp_iterations")):
+            if argument is not None:
+                if not hasattr(agent, "affordance"):
+                    parser.error("Affordance overrides require the Affordance task")
+                agent.affordance[key] = argument
         run_name = args.run_name or datetime.now().strftime("%Y-%m-%d_%H-%M-%S_%f")
         if Path(run_name).name != run_name or run_name in (".", ".."):
             parser.error("run_name must be a single directory name")
@@ -78,7 +85,12 @@ def main():
             from isal2.tests.sim_checks import smoke_check
             result = smoke_check(env, args.smoke_steps, args.check_reset)
         else:
-            runner = OnPolicyRunner(env, agent.to_dict(), str(log_dir), args.device)
+            runner_cls = OnPolicyRunner
+            if hasattr(agent, "runner_class"):
+                from importlib import import_module
+                module, name = agent.runner_class.split(":")
+                runner_cls = getattr(import_module(module), name)
+            runner = runner_cls(env, agent.to_dict(), str(log_dir), args.device)
             if args.resume:
                 runner.load(str(args.resume.resolve()), map_location=args.device)
             before = {name: p.detach().clone() for name, p in runner.alg.policy.named_parameters()}
@@ -96,6 +108,10 @@ def main():
                 result["modules_updated"] = {group: any(v for k, v in updated.items() if k.startswith(group)) for group in groups}
                 if not all(result["modules_updated"].values()):
                     raise AssertionError(f"AME modules did not update: {result['modules_updated']}")
+            if hasattr(runner, "supervised_updates"):
+                result["supervised_updates_total"] = runner.supervised_updates
+                result["affordance_parameters_updated"] = any(v for k, v in updated.items() if k.startswith("affordance_net."))
+                result["collection"] = dict(env.unwrapped.collector.stats)
             if runner.logger.writer:
                 runner.logger.writer.flush()
                 runner.logger.writer.close()

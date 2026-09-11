@@ -46,6 +46,7 @@ class OnPolicyRunner(RslOnPolicyRunner):
         start_it = self.current_learning_iteration
         total_it = start_it + num_learning_iterations
         for it in range(start_it, total_it):
+            self._start_iteration(it)
             start = time.perf_counter()
             with torch.inference_mode():
                 for _ in range(self.cfg["num_steps_per_env"]):
@@ -53,11 +54,12 @@ class OnPolicyRunner(RslOnPolicyRunner):
                     obs, rewards, dones, extras = self.env.step(actions.to(self.env.device))
                     obs, rewards, dones = obs.to(self.device), rewards.to(self.device), dones.to(self.device)
                     self.alg.process_env_step(obs, rewards, dones, extras)
+                    self._after_env_step()
                     intrinsic = self.alg.intrinsic_rewards if self.alg.rnd else None
                     self.logger.process_env_step(rewards, dones, extras, intrinsic)
                 self.alg.compute_returns(obs)
             collected = time.perf_counter()
-            losses = self.alg.update()
+            losses = self._update_algorithm()
             if not all(math.isfinite(v) for v in losses.values()):
                 raise FloatingPointError(f"Non-finite training loss: {losses}")
             self.last_loss_dict = losses
@@ -72,6 +74,18 @@ class OnPolicyRunner(RslOnPolicyRunner):
                 self._save_current()
         self._save_current()
 
+    def _start_iteration(self, iteration):
+        pass
+
+    def _after_env_step(self):
+        pass
+
+    def _update_algorithm(self):
+        return self.alg.update()
+
+    def _extra_checkpoint(self):
+        return {}
+
     def _save_current(self):
         if self.logger.log_dir is not None and not self.logger.disable_logs:
             self.save(str(Path(self.logger.log_dir) / f"model_{self.current_learning_iteration}.pt"))
@@ -85,6 +99,7 @@ class OnPolicyRunner(RslOnPolicyRunner):
             data["rnd_state_dict"] = self.alg.rnd.state_dict()
             if self.alg.rnd_optimizer:
                 data["rnd_optimizer_state_dict"] = self.alg.rnd_optimizer.state_dict()
+        data.update(self._extra_checkpoint())
         torch.save(data, path)
         self.logger.save_model(path, self.current_learning_iteration)
 

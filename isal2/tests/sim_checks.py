@@ -48,11 +48,22 @@ def smoke_check(env, steps, check_reset):
             assert torch.equal(terrain.env_origins, terrain.terrain_origins[levels, terrain.terrain_types])
             raw.reset()
     resets = 0
+    collected_samples = 0
     for step in range(steps):
         if check_reset and step == 5:
             # Force a timeout, independent of whether the random policy falls.
             raw.episode_length_buf[0] = raw.max_episode_length - 1
         obs, reward, done, extras = env.step(torch.zeros(env.num_envs, env.num_actions, device=env.device))
+        if hasattr(raw, "pop_affordance_samples"):
+            samples = raw.pop_affordance_samples()
+            if samples is not None:
+                assert all(torch.isfinite(value).all() for value in samples.values())
+                assert ((samples["label"] >= 0) & (samples["label"] <= 1)).all()
+                assert (samples["query_xy"].abs() <= torch.tensor([.8,.5],device=env.device)).all()
+                collected_samples += len(samples["label"])
+            if done.any():
+                assert not raw.collector.active.reshape(env.num_envs,2,-1)[done.bool()].any()
+                assert not raw.collector.swing.reshape(env.num_envs,2)[done.bool()].any()
         assert all(torch.isfinite(v).all() for v in obs.values()), "Non-finite observation"
         if ame:
             clean = raw._height_scan()
@@ -89,4 +100,5 @@ def smoke_check(env, steps, check_reset):
                 assert torch.equal(untouched_scan, raw.obs_buf["height_scan"][1:]), "Partial reset resampled other scans"
     return dict(terrain=raw.cfg.terrain_preset, num_envs=env.num_envs, steps=steps,
                 resets=resets, actor_dim=obs["policy"].shape[-1], critic_dim=obs["critic"].shape[-1], finite=True,
-                independent_imports=True, height_scan_dim=obs["height_scan"].shape[-1] if ame else 0)
+                independent_imports=True, height_scan_dim=obs["height_scan"].shape[-1] if ame else 0,
+                collection=dict(raw.collector.stats) if hasattr(raw,"collector") else {}, collected_samples=collected_samples)

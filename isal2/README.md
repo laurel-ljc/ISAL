@@ -1,6 +1,6 @@
 # ISAL2：独立 RPO 基础 locomotion
 
-当前实现第一至三阶段：RPO 机器人资源、完整 base 环境、MLP/PPO、AME 高程感知 Actor、任务列表及训练脚本。affordance、ONNX 导出和 MuJoCo 手柄控制尚未实现，其目录预留给后续阶段。
+当前实现第一至四阶段：RPO 机器人资源、完整 base 环境、MLP/PPO、AME 高程感知 Actor、Affordance 双路感知与交互监督训练，以及任务列表和训练脚本。ONNX 导出和 MuJoCo 手柄控制尚未实现。
 
 运行时不依赖 `isal`、`robolab`。机器人资源包含在本目录；标准强化学习组件使用外部 `rsl_rl`，只有定制网络、runner 和算法扩展放在 `modified_rsl`。外部依赖包括 Isaac Sim、Isaac Lab、RSL-RL、PyTorch。本机验证环境为 `env_isaaclab`，Python 3.11、Isaac Sim 5.1、PyTorch 2.7.0+cu128、RSL-RL 3.3.0。
 
@@ -106,3 +106,32 @@ python -m unittest discover -s tests -p "test_*.py"
 ```
 
 AME 输出在 `outputs/rpo_ame/`。恢复要求相同网络、观测布局和地图几何；不支持将 Base checkpoint 直接加载为 AME。第三阶段实际验证见 `VALIDATION_AME.md`。
+
+## Affordance 双路感知任务
+
+`ISAL2-RPO-Affordance-v0` 继承 AME 的观测、Critic、奖励、地形及 curriculum。蓝色 U-Net 仅输入高程，输出单张接触质量图；左右脚样本共同训练。图经 sigmoid、gate 和 resize 后，与 policy CNN 特征及 XY 坐标一起投影成 token。它是当前交互数据下的接触质量估计，并不是与机器人状态无关的确定性通行属性；预测值不进入 reward。
+
+蓝色网络通道为 `[16,32,64]`，两次下采样和带 skip connection 的上采样，无 BatchNorm/dropout。PPO 优化器只包含橙色网络和 Critic，监督优化器只包含 U-Net。顺序严格为 `rollout → PPO → SL → next rollout`；Actor 路径对蓝色输出使用 `no_grad`。前 500 轮输入常数 0.5，随后 1000 轮逐渐启用预测；累计有效样本不足 256 时 gate 保持为 0。蓝色网络不必等 gate 开启才学习。
+
+每个控制步在 done 判断后、reset 前处理接触。接触力进入/离开阈值为 5/2 N，连续 2 步确认；保存首次候选离地帧的高程和 root 位姿，以及首次候选接触帧的脚掌中心。脚掌中心使用 ankle-roll link 局部 `(0.025,0,-0.04)`，按完整姿态变换；再用抬脚时的 root 位置与 yaw 投回旧地图。越界 query 不裁边，不给初始无配对接触生成标签。
+
+观察窗为 `ceil(0.25/0.02)=13` 步；支持跨 rollout 和每脚 4 个重叠 pending。标签为 `0.4*exp(-s/0.2)+0.3*p+0.3*q`，其中 s 是接触帧足部刚体水平速度的均值（滑动代理），p 是窗内接触保持率，q 是足部扫描点位于名义脚底高度 ±0.02 m 内的比例均值（几何支撑代理）。无效射线不算支撑。真实终止覆盖本步标签为 0；时间截断和手动 reset 丢弃未完整观察的记录，已完成样本保留。
+
+近期样本缓冲区默认容量 65,536，保留最近 32 轮，存储原始高程、落脚 query、软标签、左右脚、指标和抬脚采集轮数。达到 64 条样本后，每轮 PPO 后进行 8 次监督更新，batch 256、Adam `1e-4`、梯度裁剪 1；在落脚中心用双线性 `grid_sample(align_corners=True)` 采样概率，计算软标签 BCE，不为未踩区域补标签。
+
+| 内容 | 参数入口 |
+|---|---|
+| 接触阈值、观察窗、脚掌偏移、标签权重、pending 数量 | `tasks/affordance/collection.py` 的 `ContactCollectionCfg`，由 `affordance_env_cfg.py` 持有 |
+| U-Net 通道、监督更新、replay 容量/时限、gate | `tasks/affordance/agents/ppo_cfg.py` |
+| 两阶段 runner 与恢复 | `modified_rsl/runners/affordance_runner.py` |
+
+```powershell
+python scripts/train.py --task ISAL2-RPO-Affordance-v0 --headless --num_envs 32 --max_iterations 5 --run_name aff_first --terrain_rows 3 --terrain_cols 20
+python scripts/train.py --task ISAL2-RPO-Affordance-v0 --headless --num_envs 32 --max_iterations 2 --resume outputs/rpo_affordance/aff_first/model_5.pt --run_name aff_resume --terrain_rows 3 --terrain_cols 20
+```
+
+短程采集不一定立即达到 64 条，需依据 `affordance_updates` 判断是否实际训练了蓝色网络；可继续恢复训练以累积真实样本。验收时可以用 `--affordance_warmup 0 --affordance_ramp 2` 缩短 gate 时长，正式默认不变。不同 gate/replay/监督配置的 checkpoint 不允许直接恢复。
+
+输出位于 `outputs/rpo_affordance/`，包含配置、TensorBoard、结果和 checkpoint。checkpoint 保存两个网络、两个优化器、归一化、iteration、gate 计数及成熟样本缓冲区。恢复后重新开始物理 episode，pending 清空；不支持 AME/Base 权重迁移。记录监督前后固定观测的动作 KL、质量图变化、gate、有效样本数量及各类接触/丢弃计数。当前仅支持单进程训练。
+
+第四阶段验收记录见 `VALIDATION_AFFORDANCE.md`；长程收敛、最终地形通过率和部署仍需后续评估。
