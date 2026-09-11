@@ -111,7 +111,7 @@ class SceneCfg(InteractiveSceneCfg):
                 offset=RayCasterCfg.OffsetCfg(pos=config.height_scanner.offset),
                 ray_alignment='yaw',
                 pattern_cfg=patterns.GridPatternCfg(
-                    resolution=config.height_scanner.resolution, size=config.height_scanner.size
+                    resolution=config.height_scanner.resolution, size=config.height_scanner.size, ordering="xy"
                 ),
                 debug_vis=config.height_scanner.debug_vis,
                 mesh_prim_paths=["/World/ground"],

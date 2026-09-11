@@ -12,3 +12,15 @@ if TASK_ID not in gym.registry:
             "rsl_rl_cfg_entry_point": "isal2.tasks.base.agents.ppo_cfg:BaseAgentCfg",
         },
     )
+
+AME_TASK_ID = "ISAL2-RPO-AME-v0"
+if AME_TASK_ID not in gym.registry:
+    gym.register(
+        id=AME_TASK_ID,
+        entry_point="isal2.tasks.ame.ame_env:AMEEnv",
+        disable_env_checker=True,
+        kwargs={
+            "env_cfg_entry_point": "isal2.tasks.ame.ame_env_cfg:RPOAMEEnvCfg",
+            "rsl_rl_cfg_entry_point": "isal2.tasks.ame.agents.ppo_cfg:AMEAgentCfg",
+        },
+    )

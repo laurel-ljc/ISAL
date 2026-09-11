@@ -1,4 +1,14 @@
-from .base_config import (BaseEnvCfg, RewardCfg, HeightScannerCfg, SceneContextCfg, RobotCfg, ObsScalesCfg, NormalizationCfg, CommandRangesCfg, CommandsCfg, NoiseScalesCfg, NoiseCfg, EventCfg)
-from .agents.ppo_cfg import BaseAgentCfg
-from .scene_cfg import SceneCfg
-from .terrain_generator_cfg import GRAVEL_TERRAINS_CFG, ROUGH_TERRAINS_CFG, ROUGH_HARD_TERRAINS_CFG
+"""Lazy exports keep agent configuration usable without starting Isaac Sim."""
+from importlib import import_module
+
+
+def __getattr__(name):
+    if name == "BaseAgentCfg":
+        module = ".agents.ppo_cfg"
+    elif name == "SceneCfg":
+        module = ".scene_cfg"
+    elif name.endswith("TERRAINS_CFG"):
+        module = ".terrain_generator_cfg"
+    else:
+        module = ".base_config"
+    return getattr(import_module(module, __name__), name)

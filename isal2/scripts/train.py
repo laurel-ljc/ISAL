@@ -1,4 +1,4 @@
-"""Train the base task using external RSL-RL and ISAL2 extensions."""
+"""Train a registered ISAL2 task using external RSL-RL and project extensions."""
 import argparse
 from datetime import datetime
 from pathlib import Path
@@ -20,7 +20,7 @@ def main():
     from isaaclab.app import AppLauncher
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--task", default="ISAL2-RPO-Base-v0")
-    parser.add_argument("--terrain", choices=["flat", "rough", "rough_hard"], default="rough")
+    parser.add_argument("--terrain", choices=["flat", "rough", "rough_hard"], default=None)
     parser.add_argument("--num_envs", type=int, default=4096)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--max_iterations", type=int, default=12001, help="Additional updates, including on resume")
@@ -50,17 +50,18 @@ def main():
         import gymnasium as gym
         from isaaclab.utils.io import dump_yaml
         import isal2.tasks
-        from isal2.tasks.base.base_env_cfg import RPOBaseEnvCfg
-        from isal2.tasks.base.agents.ppo_cfg import BaseAgentCfg
+        from isal2.utils.task_config import load_task_configs
         from isal2.utils.rsl_env import RslEnvAdapter
         from isal2.modified_rsl.runners import OnPolicyRunner
-        cfg = RPOBaseEnvCfg()
+        cfg, agent = load_task_configs(args.task)
         wp.config.kernel_cache_dir = str(ROOT / ".cache" / "warp")
         cfg.sim.log_dir = str(ROOT / "outputs" / "sim_logs")
         cfg.seed = args.seed
         cfg.sim.device = args.device
         cfg.configure(args.terrain, args.num_envs, args.terrain_rows, args.terrain_cols)
-        agent = BaseAgentCfg(seed=args.seed, device=args.device, max_iterations=args.max_iterations)
+        agent.seed, agent.device, agent.max_iterations = args.seed, args.device, args.max_iterations
+        if hasattr(agent, "configure_from_env"):
+            agent.configure_from_env(cfg)
         run_name = args.run_name or datetime.now().strftime("%Y-%m-%d_%H-%M-%S_%f")
         if Path(run_name).name != run_name or run_name in (".", ".."):
             parser.error("run_name must be a single directory name")
@@ -80,14 +81,21 @@ def main():
             runner = OnPolicyRunner(env, agent.to_dict(), str(log_dir), args.device)
             if args.resume:
                 runner.load(str(args.resume.resolve()), map_location=args.device)
-            before = [p.detach().clone() for p in runner.alg.policy.parameters()]
+            before = {name: p.detach().clone() for name, p in runner.alg.policy.named_parameters()}
             start_iteration = runner.current_learning_iteration
             runner.learn(args.max_iterations)
-            changed = any(not torch.equal(p, q) for p, q in zip(before, runner.alg.policy.parameters()))
+            updated = {name: not torch.equal(before[name], p) for name, p in runner.alg.policy.named_parameters()}
+            changed = any(updated.values())
             if not changed:
                 raise AssertionError("PPO did not update any model parameter")
             result = dict(start_iteration=start_iteration, completed_iterations=runner.current_learning_iteration,
                 parameters_updated=changed, losses=runner.last_loss_dict)
+            if hasattr(runner.alg.policy, "terrain_attention"):
+                groups = ["terrain_attention.policy_encoder", "terrain_attention.position_encoding",
+                          "terrain_attention.query.", "terrain_attention.attention", "actor", "critic"]
+                result["modules_updated"] = {group: any(v for k, v in updated.items() if k.startswith(group)) for group in groups}
+                if not all(result["modules_updated"].values()):
+                    raise AssertionError(f"AME modules did not update: {result['modules_updated']}")
             if runner.logger.writer:
                 runner.logger.writer.flush()
                 runner.logger.writer.close()

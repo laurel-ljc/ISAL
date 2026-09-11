@@ -67,6 +67,7 @@ class RPOBaseEnvCfg(BaseEnvCfg):
             self.reward.lin_vel_z_l2.weight = -0.05
         else:
             raise ValueError(f"Unknown terrain preset: {self.terrain_preset}")
+        self._configure_observation_sensors()
         self.actor_frame_dim = 9 + 3 * self.action_space
         self.critic_frame_dim = self.actor_frame_dim + 3 + 2 + 6 + 2 + 2 + 2 * self.action_space
         if self.scene_context.height_scanner.enable_height_scan:
@@ -77,3 +78,6 @@ class RPOBaseEnvCfg(BaseEnvCfg):
         self.scene = SceneCfg(self.scene_context, self.sim.dt, self.decimation * self.sim.dt)
         self.scene.terrain.use_terrain_origins = self.terrain_preset != "flat"
         return self
+
+    def _configure_observation_sensors(self):
+        """Subclasses override before dimensions and the scene are constructed."""

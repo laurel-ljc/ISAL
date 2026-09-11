@@ -12,6 +12,19 @@ def smoke_check(env, steps, check_reset):
     obs = env.get_observations()
     assert obs["policy"].shape == (env.num_envs, raw.cfg.observation_space)
     assert obs["critic"].shape == (env.num_envs, raw.cfg.state_space)
+    ame = "height_scan" in obs
+    if ame:
+        from isaaclab.sensors.ray_caster.patterns import grid_pattern
+        from isal2.modified_rsl.modules.terrain_attention import PositionEncoding2D
+        assert raw.cfg.observation_space == 390 and raw.cfg.state_space == 1630
+        assert obs["height_scan"].shape == (env.num_envs, 187)
+        scan_cfg = raw.cfg.scene.height_scanner
+        assert scan_cfg.ray_alignment == "yaw" and scan_cfg.pattern_cfg.ordering == "xy"
+        assert scan_cfg.offset.pos == (0.0, 0.0, 20.0)
+        assert raw.cfg.normalization.height_scan_offset == 0.75
+        starts, _ = grid_pattern(scan_cfg.pattern_cfg, env.device)
+        coords = PositionEncoding2D(32, 32, (11, 17), .1).coordinates.to(env.device)
+        assert torch.allclose(starts[:, :2], coords[0].flatten(1).T, atol=1e-6), "Ray/token XY ordering mismatch"
     levels = raw.scene.terrain.terrain_levels.clone() if hasattr(raw.scene.terrain, "terrain_levels") else None
     raw.reset()
     if levels is not None:
@@ -41,20 +54,39 @@ def smoke_check(env, steps, check_reset):
             raw.episode_length_buf[0] = raw.max_episode_length - 1
         obs, reward, done, extras = env.step(torch.zeros(env.num_envs, env.num_actions, device=env.device))
         assert all(torch.isfinite(v).all() for v in obs.values()), "Non-finite observation"
+        if ame:
+            clean = raw._height_scan()
+            critic_scan = obs["critic"].reshape(env.num_envs, 5, -1)[:, -1, -187:]
+            assert torch.equal(clean, critic_scan), "Actor noise contaminated critic height"
+            bound = raw.cfg.noise.noise_scales.height_scan * raw.obs_scales.height_scan if raw.add_noise else 0
+            assert (obs["height_scan"] - clean).abs().max() <= bound + 1e-6
+            cached = {k: v.clone() for k, v in env.get_observations().items()}
+            assert all(torch.equal(v, env.get_observations()[k]) for k, v in cached.items())
         assert torch.isfinite(reward).all(), "Non-finite reward"
         assert torch.isfinite(raw.actions).all(), "Non-finite action target"
         resets += int(done.sum())
         if done.any():
             assert "terminal_observation" in extras
+            if ame:
+                terminal = extras["terminal_observation"]
+                assert terminal["height_scan"].shape == obs["height_scan"].shape
+                terminal_clean = terminal["critic"].reshape(env.num_envs, 5, -1)[:, -1, -187:]
+                assert (terminal["height_scan"] - terminal_clean).abs().max() <= bound + 1e-6
+                assert terminal["height_scan"].data_ptr() != obs["height_scan"].data_ptr()
             for history in (raw.actor_obs_buffer, raw.critic_obs_buffer):
                 reset_history = history.buffer[done.bool()]
                 assert torch.equal(reset_history, reset_history[:, -1:].expand_as(reset_history))
             assert (raw.action_buffer.buffer[done.bool()] == 0).all()
         if check_reset and step == 10 and env.num_envs > 1:
             untouched = raw.actor_obs_buffer.buffer[1:].clone()
+            untouched_critic = raw.critic_obs_buffer.buffer[1:].clone()
+            untouched_scan = raw.obs_buf["height_scan"][1:].clone() if ame else None
             raw._reset_idx(torch.tensor([0], device=env.device))
             raw.obs_buf = raw._get_observations(env_ids=torch.tensor([0], device=env.device))
             assert torch.equal(untouched, raw.actor_obs_buffer.buffer[1:]), "Partial reset changed other histories"
+            assert torch.equal(untouched_critic, raw.critic_obs_buffer.buffer[1:])
+            if ame:
+                assert torch.equal(untouched_scan, raw.obs_buf["height_scan"][1:]), "Partial reset resampled other scans"
     return dict(terrain=raw.cfg.terrain_preset, num_envs=env.num_envs, steps=steps,
                 resets=resets, actor_dim=obs["policy"].shape[-1], critic_dim=obs["critic"].shape[-1], finite=True,
-                independent_imports=True)
+                independent_imports=True, height_scan_dim=obs["height_scan"].shape[-1] if ame else 0)
