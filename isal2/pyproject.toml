@@ -9,6 +9,10 @@ description = "Independent RPO perceptive locomotion tasks"
 requires-python = ">=3.11"
 dependencies = ["rsl-rl-lib==3.3.0", "torch>=2.6", "numpy", "tensordict>=0.7", "gymnasium", "tensorboard", "GitPython", "PyYAML"]
 
+[project.optional-dependencies]
+deployment = ["onnx>=1.17", "mujoco>=3.3"]
+# Install either onnxruntime or onnxruntime-gpu separately; do not install both.
+
 [tool.setuptools.package-data]
 "*" = ["*.md", "*.toml"]
 "isal2.assets" = ["data/**/*", "manifest.json"]

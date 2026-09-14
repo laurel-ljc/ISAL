@@ -1,0 +1,310 @@
+{
+  "schema_version": 1,
+  "model_type": "ame",
+  "task": "ISAL2-RPO-AME-v0",
+  "checkpoint": "C:\\Users\\Admin\\Documents\\ISAL\\isal2\\outputs_download\\rpo_ame\\ISAL2-RPO-AME-v0-Rough\\model_9001.pt",
+  "checkpoint_sha256": "10f8d6948cbaa05e1551443f7568596b096d42c3759b1f76690f1ea64915751e",
+  "inputs": {
+    "policy": [
+      null,
+      390
+    ],
+    "height_scan": [
+      null,
+      187
+    ]
+  },
+  "output": {
+    "actions": [
+      null,
+      23
+    ]
+  },
+  "joint_names": [
+    "left_thigh_yaw_joint",
+    "right_thigh_yaw_joint",
+    "torso_joint",
+    "left_thigh_roll_joint",
+    "right_thigh_roll_joint",
+    "left_arm_pitch_joint",
+    "right_arm_pitch_joint",
+    "left_thigh_pitch_joint",
+    "right_thigh_pitch_joint",
+    "left_arm_roll_joint",
+    "right_arm_roll_joint",
+    "left_knee_joint",
+    "right_knee_joint",
+    "left_arm_yaw_joint",
+    "right_arm_yaw_joint",
+    "left_ankle_pitch_joint",
+    "right_ankle_pitch_joint",
+    "left_elbow_pitch_joint",
+    "right_elbow_pitch_joint",
+    "left_ankle_roll_joint",
+    "right_ankle_roll_joint",
+    "left_elbow_yaw_joint",
+    "right_elbow_yaw_joint"
+  ],
+  "joints": {
+    "default_pos": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.18,
+      0.18,
+      -0.1,
+      -0.1,
+      0.06,
+      -0.06,
+      0.3,
+      0.3,
+      0.0,
+      0.0,
+      -0.2,
+      -0.2,
+      0.78,
+      0.78,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "default_vel": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "kp": [
+      100.0,
+      100.0,
+      150.0,
+      100.0,
+      100.0,
+      40.0,
+      40.0,
+      100.0,
+      100.0,
+      40.0,
+      40.0,
+      150.0,
+      150.0,
+      40.0,
+      40.0,
+      40.0,
+      40.0,
+      30.0,
+      30.0,
+      40.0,
+      40.0,
+      20.0,
+      20.0
+    ],
+    "kd": [
+      3.3,
+      3.3,
+      5.0,
+      3.3,
+      3.3,
+      2.0,
+      2.0,
+      3.3,
+      3.3,
+      2.0,
+      2.0,
+      5.0,
+      5.0,
+      2.0,
+      2.0,
+      2.0,
+      2.0,
+      1.5,
+      1.5,
+      2.0,
+      2.0,
+      1.0,
+      1.0
+    ],
+    "effort_limit": [
+      120.0,
+      120.0,
+      120.0,
+      120.0,
+      120.0,
+      27.0,
+      27.0,
+      120.0,
+      120.0,
+      27.0,
+      27.0,
+      120.0,
+      120.0,
+      27.0,
+      27.0,
+      27.0,
+      27.0,
+      27.0,
+      27.0,
+      27.0,
+      27.0,
+      27.0,
+      27.0
+    ],
+    "velocity_limit": [
+      25.0,
+      25.0,
+      25.0,
+      25.0,
+      25.0,
+      8.0,
+      8.0,
+      25.0,
+      25.0,
+      8.0,
+      8.0,
+      25.0,
+      25.0,
+      8.0,
+      8.0,
+      8.0,
+      8.0,
+      8.0,
+      8.0,
+      8.0,
+      8.0,
+      8.0,
+      8.0
+    ],
+    "armature": [
+      0.01,
+      0.01,
+      0.01,
+      0.01,
+      0.01,
+      0.01,
+      0.01,
+      0.01,
+      0.01,
+      0.01,
+      0.01,
+      0.01,
+      0.01,
+      0.01,
+      0.01,
+      0.01,
+      0.01,
+      0.01,
+      0.01,
+      0.01,
+      0.01,
+      0.01,
+      0.01
+    ]
+  },
+  "root_pos": [
+    0.0,
+    0.0,
+    0.75
+  ],
+  "root_quat_wxyz": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+  ],
+  "frame_order": [
+    "ang_vel_b",
+    "projected_gravity_b",
+    "commands",
+    "joint_pos_delta",
+    "joint_vel_delta",
+    "previous_action"
+  ],
+  "history_length": 5,
+  "frame_dim": 78,
+  "obs_scales": {
+    "lin_vel": 1.0,
+    "ang_vel": 1.0,
+    "projected_gravity": 1.0,
+    "commands": 1.0,
+    "joint_pos": 1.0,
+    "joint_vel": 1.0,
+    "actions": 1.0,
+    "height_scan": 1.0
+  },
+  "clip_observations": 100.0,
+  "clip_actions": 100.0,
+  "action_scale": 0.25,
+  "control_dt": 0.02,
+  "command_ranges": {
+    "lin_vel_x": [
+      -0.6,
+      1.0
+    ],
+    "lin_vel_y": [
+      -0.5,
+      0.5
+    ],
+    "ang_vel_z": [
+      -1.57,
+      1.57
+    ]
+  },
+  "height_scan": {
+    "shape": [
+      11,
+      17
+    ],
+    "ordering": "xy",
+    "resolution": 0.1,
+    "size": [
+      1.6,
+      1.0
+    ],
+    "ray_offset": [
+      0.0,
+      0.0,
+      20.0
+    ],
+    "height_offset": 0.75,
+    "clip": [
+      -1,
+      1
+    ],
+    "miss_value": 1
+  },
+  "affordance_alpha": null,
+  "physics_dt": 0.001,
+  "actuator_delay_steps": 0,
+  "onnx_sha256": "9b3fb2508e746451f887ec5310a82eb6bd611d4a22cb803c29ffba49ffafae1d",
+  "validation": {
+    "max_absolute_error_by_batch": {
+      "1": 1.6689300537109375e-06,
+      "4": 5.364418029785156e-07,
+      "32": 2.6226043701171875e-06
+    },
+    "atol": 1e-05,
+    "rtol": 0.0001
+  }
+}

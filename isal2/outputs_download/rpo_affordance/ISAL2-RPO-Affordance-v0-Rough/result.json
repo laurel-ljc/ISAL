@@ -1,0 +1,49 @@
+{
+  "start_iteration": 0,
+  "completed_iterations": 9001,
+  "parameters_updated": true,
+  "losses": {
+    "value": 0.012181083764880895,
+    "surrogate": -0.008356507314601913,
+    "entropy": -7.913617062568664,
+    "affordance_loss": 0.3441842347383499,
+    "affordance_updates": 8.0,
+    "affordance_replay_size": 65536.0,
+    "affordance_samples_total": 49533173.0,
+    "affordance_alpha": 1.0,
+    "affordance_policy_kl": 0.009403911419212818,
+    "affordance_map_change": 0.007005704566836357,
+    "contact_liftoff": 51137466.0,
+    "contact_touchdown": 52764882.0,
+    "contact_matured": 49533173.0,
+    "contact_out_of_bounds": 45358.0,
+    "contact_unpaired": 2711623.0,
+    "contact_swing_timeout": 25915.0,
+    "contact_overflow": 0.0,
+    "contact_reset_discarded": 472304.0,
+    "contact_invalid": 0.0,
+    "contact_failed": 523689.0
+  },
+  "modules_updated": {
+    "terrain_attention.policy_encoder": true,
+    "terrain_attention.position_encoding": true,
+    "terrain_attention.query.": true,
+    "terrain_attention.attention": true,
+    "actor": true,
+    "critic": true
+  },
+  "supervised_updates_total": 72008,
+  "affordance_parameters_updated": true,
+  "collection": {
+    "liftoff": 51137466,
+    "touchdown": 52764882,
+    "matured": 49533173,
+    "out_of_bounds": 45358,
+    "unpaired": 2711623,
+    "swing_timeout": 25915,
+    "overflow": 0,
+    "reset_discarded": 472304,
+    "invalid": 0,
+    "failed": 523689
+  }
+}

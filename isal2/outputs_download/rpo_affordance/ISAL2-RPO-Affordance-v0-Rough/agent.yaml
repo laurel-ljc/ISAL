@@ -1,0 +1,74 @@
+seed: 42
+device: cuda:0
+num_steps_per_env: 24
+max_iterations: 9001
+save_interval: 500
+logger: tensorboard
+experiment_name: rpo_affordance
+obs_groups:
+  policy:
+  - policy
+  critic:
+  - critic
+  perception:
+  - height_scan
+policy:
+  class_name: isal2.modified_rsl.modules:ActorCriticAffordance
+  init_noise_std: 1.0
+  noise_std_type: scalar
+  actor_hidden_dims:
+  - 512
+  - 256
+  - 128
+  critic_hidden_dims:
+  - 512
+  - 256
+  - 128
+  activation: elu
+  actor_obs_normalization: true
+  critic_obs_normalization: true
+  map_shape: !!python/tuple
+  - 11
+  - 17
+  map_resolution: 0.1
+  embedding_dim: 32
+  cnn_channels:
+  - 16
+  - 32
+  - 32
+  query_hidden_dims:
+  - 128
+  num_heads: 4
+  unet_channels:
+  - 16
+  - 32
+  - 64
+algorithm:
+  class_name: isal2.modified_rsl.algorithms:AffordancePPO
+  value_loss_coef: 1.0
+  use_clipped_value_loss: true
+  clip_param: 0.2
+  entropy_coef: 0.005
+  num_learning_epochs: 5
+  num_mini_batches: 4
+  learning_rate: 0.0001
+  schedule: adaptive
+  gamma: 0.994
+  lam: 0.9
+  desired_kl: 0.01
+  max_grad_norm: 1.0
+  normalize_advantage_per_mini_batch: false
+  rnd_cfg: null
+  symmetry_cfg: null
+runner_class: isal2.modified_rsl.runners.affordance_runner:AffordanceRunner
+affordance:
+  capacity: 65536
+  max_age: 32
+  batch_size: 256
+  gradient_steps: 8
+  min_samples: 64
+  learning_rate: 0.0001
+  max_grad_norm: 1.0
+  warmup_iterations: 500
+  ramp_iterations: 1000
+  gate_min_samples: 256

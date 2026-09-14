@@ -1,6 +1,6 @@
 # ISAL2：独立 RPO 基础 locomotion
 
-当前实现第一至四阶段：RPO 机器人资源、完整 base 环境、MLP/PPO、AME 高程感知 Actor、Affordance 双路感知与交互监督训练，以及任务列表和训练脚本。ONNX 导出和 MuJoCo 手柄控制尚未实现。
+当前实现第一至五阶段：RPO 机器人资源、完整 base 环境、MLP/PPO、AME 高程感知 Actor、Affordance 双路感知与交互监督训练，以及任务列表、训练、ONNX 导出和 MuJoCo 手柄控制脚本。
 
 运行时不依赖 `isal`、`robolab`。机器人资源包含在本目录；标准强化学习组件使用外部 `rsl_rl`，只有定制网络、runner 和算法扩展放在 `modified_rsl`。外部依赖包括 Isaac Sim、Isaac Lab、RSL-RL、PyTorch。本机验证环境为 `env_isaaclab`，Python 3.11、Isaac Sim 5.1、PyTorch 2.7.0+cu128、RSL-RL 3.3.0。
 
@@ -134,4 +134,62 @@ python scripts/train.py --task ISAL2-RPO-Affordance-v0 --headless --num_envs 32 
 
 输出位于 `outputs/rpo_affordance/`，包含配置、TensorBoard、结果和 checkpoint。checkpoint 保存两个网络、两个优化器、归一化、iteration、gate 计数及成熟样本缓冲区。恢复后重新开始物理 episode，pending 清空；不支持 AME/Base 权重迁移。记录监督前后固定观测的动作 KL、质量图变化、gate、有效样本数量及各类接触/丢弃计数。当前仅支持单进程训练。
 
-第四阶段验收记录见 `VALIDATION_AFFORDANCE.md`；长程收敛、最终地形通过率和部署仍需后续评估。
+第四阶段验收记录见 `VALIDATION_AFFORDANCE.md`；长程收敛和最终地形通过率仍需后续评估。
+
+## ONNX 导出
+
+导出支持三个任务，读取可信的本地训练 checkpoint；不会启动 Isaac Sim。默认读取 checkpoint 同目录的 `env.yaml`、`joint_names.json`，网络配置来自 checkpoint 的 `train_cfg`。移动文件后可用 `--env-config`、`--joint-names`、`--agent-config` 显式指定。缺失配置或关节映射不完整会报错。
+
+```powershell
+# 以下命令均在 isal2 目录下执行；换成自己的训练 checkpoint。
+python scripts/export_onnx.py --checkpoint outputs/rpo_ame/ame_train_acceptance/model_5.pt
+python scripts/export_onnx.py --checkpoint outputs/rpo_affordance/aff_gate_acceptance/model_10.pt
+python scripts/export_onnx.py --checkpoint outputs/rpo_base/external_rsl_train/model_5.pt
+```
+
+默认输出到 checkpoint 同目录的 `export/`，可用 `--output <目录>` 修改。`model.onnx` 与 `deployment.json` 必须一起保留，运行端检查 ONNX 哈希；JSON 包含观测定义、关节顺序、默认姿态、逐关节 PD/力矩限制、动作缩放、控制周期和高程几何。历史在运行端维护，Actor 归一化包含在 ONNX 内，不重复归一化。
+
+| 模型 | 输入 | 输出 |
+|---|---|---|
+| Base | `policy [B,390]` | `actions [B,23]` |
+| AME / Affordance | `policy [B,390]`、`height_scan [B,187]` | `actions [B,23]` |
+
+导出使用 float32、opset 17 和动态 batch，输出确定性动作均值。Critic、优化器、replay 不进入图。Affordance 保留 checkpoint 的 U-Net、归一化及 α；早期 checkpoint 的 α=0 是正常结果，不会在导出时自动开启预测图。每次导出自动比较原 Actor、标准运算包装器与 ONNX Runtime 的 batch 1/4/32 输出，误差记录在 JSON 中。
+
+导出需要 PyTorch、RSL-RL、PyYAML、onnx、ONNX Runtime；MuJoCo 运行只加载 NumPy、MuJoCo、ONNX Runtime 及本项目部署模块。本机已有 `onnx==1.20.1`、`onnxruntime-gpu==1.27.0`、`mujoco==3.3.3`，无需安装 pygame，也无需替换已有 ONNX Runtime。新环境可用 `pip install -e ".[deployment]"` 安装项目附加依赖，再根据环境选择安装 `onnxruntime` 或 `onnxruntime-gpu`，两者只装一个。独立运行机器也可直接保留项目目录并仅安装 `numpy mujoco onnxruntime`，通过脚本启动，无需安装训练依赖。
+
+## MuJoCo 与 Windows 手柄
+
+```powershell
+# 可视化混合地形；初始暂停，连接 Xbox 兼容手柄后按 Start。
+python scripts/sim2sim.py --model outputs/rpo_affordance/aff_gate_acceptance/export/model.onnx
+
+# 无界面验收，实际出生在 rough 的粗糙地面区域。
+python scripts/sim2sim.py --model outputs/rpo_ame/ame_train_acceptance/export/model.onnx --terrain rough --spawn-tile 1 --headless --duration 4 --command 0.3 0 0
+
+# 难地形踏石区域；命令范围来自模型的部署配置。
+python scripts/sim2sim.py --model outputs/rpo_affordance/aff_gate_acceptance/export/model.onnx --terrain rough_hard --spawn-tile 7 --difficulty 0.7 --seed 42 --headless --duration 4 --command 0.3 0 0
+```
+
+默认 CPUExecutionProvider，物理步长 1 ms，策略周期 20 ms，PD 在每个物理步执行。关节按名称映射，目标为 `default_pos + action_scale * clipped_action`，力矩按训练配置逐关节限制。默认无观测噪声、零执行器延迟；保留资源中的名义接触参数。JSON 中保存速度上限供检查，当前不额外硬裁剪 MuJoCo 关节速度，也不模拟 Isaac Lab 随机化。MuJoCo 与 PhysX 的接触动力学并不相同。
+
+本体输入与训练一致，5 帧按旧到新排列，初始帧填满历史。当前高程不堆叠历史、不做在线归一化，187 点按 x 列/y 行恢复为 11×17；扫描随 base yaw 旋转，排除所有机器人几何体。重置会清空上一动作和历史。交互模式下检测到倾覆（机体竖直轴与世界竖直轴点积 <0.35）后暂停；按 Y 重置后再按 Start。无界面模式会自动重置并继续计数。这个恢复判据独立于训练终止条件。
+
+| 输入 | 功能 |
+|---|---|
+| 左摇杆前后 / 左右 | 前进速度 / 横移速度 |
+| 右摇杆左右 | 转向速度 |
+| A | 当前命令清零；之后仍由摇杆决定命令 |
+| Y / 键盘 R | 重置机器人并暂停 |
+| Start / 空格 | 暂停或继续；继续需要手柄处于连接状态 |
+| Back / Esc | 退出 |
+
+`--controller-index` 选择 XInput 0–3，默认 0。死区默认 0.15，断连会清零并暂停，重连后需重新按 Start。`--controller-config` 接受 JSON，例如 `{"deadzone":0.2,"sensitivity":[0.7,0.7,0.5]}`。完整默认值位于 `deployment/controller.py` 的 `DEFAULT_CONTROLLER`；可覆盖 axes、signs、sensitivity 和按钮位掩码。只实现 Windows XInput，尚未完成实物手柄验收；不支持 Linux 手柄。
+
+地形参数集中在 `deployment/terrain.py` 的 `DEFAULT_TERRAIN`，`--terrain-config` 接受 JSON 覆盖，例如 `{"step_width":0.35,"pit_depth":1.5}`。可选 flat、rough、rough_hard、mixed；默认 mixed，seed=42、difficulty=0.5。difficulty 对参数范围进行线性插值。
+
+mixed 为 2×4 个 8×8 米区域，按行编号：0 平地、1 粗糙、2 正坡、3 反坡、4 上楼梯、5 下楼梯、6 方块、7 踏石与沟槽。rough 的 7 号区域为粗糙地面，rough_hard 使用更高台阶/方块和踏石沟槽，flat 只有 0 号区域。默认出生在 0；`--spawn-tile` 可直接测试其他区域。保留 1 米平坦边界、2 米中心平台。地形用 0.05 米网格 heightfield 表示，台阶及坑边按此分辨率离散，沟槽有降低的坑底，没有同高度隐藏地板。
+
+输出默认在 `outputs/sim2sim/<时间>/`：`result.json` 保存状态、跌倒/reset、推理耗时、依赖隔离检查及实际参数；`telemetry.json` 保存每步命令、动作、力矩、饱和计数和位置。`scene/terrain.json` 保存地形配置；`scene/scene.mjb` 包含实际高度数据。`scene.xml` 是用于构建的模板，单独加载它不包含运行时填入的 heightfield 数据。原始机器人 MJCF、mesh 和资源 manifest 不改动。
+
+第五阶段实际命令与验收结果见 `VALIDATION_DEPLOYMENT.md`。短程验收 checkpoint 只适合检查部署链路；实际 locomotion 效果需使用完成训练的模型评估。
