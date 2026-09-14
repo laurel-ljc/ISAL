@@ -50,7 +50,7 @@ class DeploymentMathTests(unittest.TestCase):
         state = {"buttons": 0, "lx": 0, "ly": 0, "rx": 0, "ry": 0}
         self.assertTrue(controller.paused)
         controller.update(state)
-        command, events = controller.update({**state, "buttons": 16, "ly": 32767, "lx": 32767, "rx": -32768})
+        command, events = controller.update({**state, "buttons": 16, "ly": 32767, "lx": 32767, "lt": 255})
         np.testing.assert_allclose(command, [1, -.5, 1.57])
         self.assertTrue(events["pause"])
         controller.update({**state, "buttons": 16})

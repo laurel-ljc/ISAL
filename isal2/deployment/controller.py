@@ -4,9 +4,20 @@ import sys
 import numpy as np
 
 
-DEFAULT_CONTROLLER = {"deadzone": .15, "axes": ["ly", "lx", "rx"], "signs": [1, -1, -1],
+DEFAULT_CONTROLLER = {"deadzone": .15, "trigger_deadzone": .05,
+                      "axes": ["ly", "lx", "triggers"], "signs": [1, -1, 1],
                       "sensitivity": [1., 1., 1.], "buttons": {"zero": 0x1000, "reset": 0x8000,
                       "pause": 0x0010, "exit": 0x0020}}
+
+
+def deadzone(value, threshold):
+    value = np.clip(value, -1., 1.)
+    return float(np.sign(value) * max(abs(value) - threshold, 0.) / (1. - threshold))
+
+
+def stick_value(state, axis, threshold):
+    raw = state.get(axis, 0)
+    return deadzone(raw / (32767 if raw >= 0 else 32768), threshold)
 
 
 class Gamepad(ctypes.Structure):
@@ -34,7 +45,7 @@ class XInput:
         if self.dll.XInputGetState(self.index, ctypes.byref(state)) != 0:
             return None
         g = state.gamepad
-        return {"buttons": g.buttons, **{key: getattr(g, key) for key in ("lx", "ly", "rx", "ry")}}
+        return {"buttons": g.buttons, **{key: getattr(g, key) for key in ("lx", "ly", "rx", "ry", "lt", "rt")}}
 
 
 class CommandController:
@@ -44,10 +55,10 @@ class CommandController:
             raise ValueError("Unknown controller configuration keys")
         self.config["buttons"] = {**DEFAULT_CONTROLLER["buttons"], **(config or {}).get("buttons", {})}
         self.bounds = np.array([ranges[key] for key in ("lin_vel_x", "lin_vel_y", "ang_vel_z")])
-        if not 0 <= self.config["deadzone"] < 1:
+        if not all(0 <= self.config[key] < 1 for key in ("deadzone", "trigger_deadzone")):
             raise ValueError("Controller deadzone must be in [0,1)")
-        if len(self.config["axes"]) != 3 or any(a not in ("lx", "ly", "rx", "ry") for a in self.config["axes"]):
-            raise ValueError("Expected three XInput stick axes")
+        if len(self.config["axes"]) != 3 or any(a not in ("lx", "ly", "rx", "ry", "triggers") for a in self.config["axes"]):
+            raise ValueError("Expected three XInput axes (lx, ly, rx, ry or triggers)")
         if len(self.config["signs"]) != 3 or len(self.config["sensitivity"]) != 3:
             raise ValueError("Expected three signs and sensitivity values")
         if not all(s in (-1, 1) for s in self.config["signs"]) or not all(
@@ -69,9 +80,12 @@ class CommandController:
         events = {key: bool(pressed & self.config["buttons"][key]) for key in events}
         if events["pause"]:
             self.paused = not self.paused
-        values = np.array([state[a] / (32767 if state[a] >= 0 else 32768) for a in self.config["axes"]])
-        dead = self.config["deadzone"]
-        values = np.sign(values) * np.maximum(np.abs(values) - dead, 0) / (1 - dead)
+        # Positive body yaw turns left: LT turns left, RT turns right. Normalize
+        # unsigned 8-bit triggers independently before subtracting their values.
+        turning = (deadzone(state.get("lt", 0) / 255., self.config["trigger_deadzone"])
+                   - deadzone(state.get("rt", 0) / 255., self.config["trigger_deadzone"]))
+        values = np.array([turning if a == "triggers" else stick_value(state, a, self.config["deadzone"])
+                           for a in self.config["axes"]])
         values = np.clip(values * self.config["signs"] * self.config["sensitivity"], -1, 1)
         commands = np.where(values >= 0, values * self.bounds[:, 1], -values * self.bounds[:, 0])
         if self.paused or events["zero"] or events["reset"]:

@@ -25,6 +25,7 @@ def main():
     parser.add_argument("--terrain", choices=["flat", "rough", "rough_hard", "mixed"], default="mixed")
     parser.add_argument("--terrain-config", help="JSON overrides for terrain parameters")
     parser.add_argument("--controller-config", help="JSON overrides for XInput mapping")
+    parser.add_argument("--camera-config", help="JSON overrides for the following/orbit camera")
     parser.add_argument("--controller-index", type=int, default=0)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--difficulty", type=float, default=.5)
@@ -41,6 +42,7 @@ def main():
     if args.duration is not None and args.duration <= 0:
         parser.error("--duration must be positive")
     from isal2.deployment.controller import CommandController, XInput
+    from isal2.deployment.camera import FollowCamera
     from isal2.deployment.runtime import Simulator, load_policy
     from isal2.deployment.terrain import build_scene
     import numpy as np
@@ -55,6 +57,7 @@ def main():
     tile = terrain["tiles"][args.spawn_tile]
     simulator = Simulator(model, metadata, session, (*tile["center"][:2], tile["center_height"]))
     controller = CommandController(metadata["command_ranges"], read_config(args.controller_config))
+    camera = FollowCamera(read_config(args.camera_config))
     duration = args.duration if args.duration is not None else (10 if args.headless else float("inf"))
     max_steps = int(np.ceil(duration / metadata["control_dt"])) if np.isfinite(duration) else float("inf")
     fixed = np.array(args.command or [0, 0, 0], dtype=float)
@@ -70,17 +73,19 @@ def main():
         context = mujoco.viewer.launch_passive(model, simulator.data, key_callback=keyboard)
         pad = XInput(args.controller_index)
         print("Paused. XInput: Start resume/pause, A zero, Y reset, Back exit. Keyboard: Space pause, R reset, Esc exit.")
+        print("Left stick: move. LT/RT: turn left/right. Right stick: orbit/look and hold angle. RB: smoothly return behind the robot.")
     error = None
     try:
         with context as viewer:
             if viewer:
                 with viewer.lock():
-                    viewer.cam.distance = 4
-                    viewer.cam.azimuth = 135
-                    viewer.cam.elevation = -20
+                    camera.update(viewer.cam, simulator.data.xpos[simulator.base],
+                                  simulator.data.xmat[simulator.base], None, 0.)
+            camera_time = time.perf_counter()
             while simulator.steps < max_steps and (viewer is None or viewer.is_running()):
                 start = time.perf_counter()
-                command, events = (fixed, {}) if args.headless else controller.update(pad.poll())
+                pad_state = None if args.headless else pad.poll()
+                command, events = (fixed, {}) if args.headless else controller.update(pad_state)
                 keys = keyboard_events.copy()
                 keyboard_events.difference_update(keys)
                 if events.get("exit") or 256 in keys:
@@ -89,6 +94,7 @@ def main():
                     controller.paused = not controller.paused
                 if events.get("reset") or 82 in keys:
                     simulator.reset()
+                    camera.reset()
                     controller.paused = True
                 if args.headless or not controller.paused:
                     fallen = simulator.step(command)
@@ -100,8 +106,11 @@ def main():
                             controller.paused = True
                             print("Fall detected; paused. Press Y/R to reset.")
                 if viewer:
+                    now = time.perf_counter()
                     with viewer.lock():
-                        viewer.cam.lookat[:] = simulator.data.xpos[simulator.base]
+                        camera.update(viewer.cam, simulator.data.xpos[simulator.base],
+                                      simulator.data.xmat[simulator.base], pad_state, min(now - camera_time, .1))
+                    camera_time = now
                     viewer.sync()
                     time.sleep(max(0, metadata["control_dt"] - (time.perf_counter() - start)))
     except Exception as exc:

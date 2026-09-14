@@ -178,13 +178,17 @@ python scripts/sim2sim.py --model outputs/rpo_affordance/aff_gate_acceptance/exp
 | 输入 | 功能 |
 |---|---|
 | 左摇杆前后 / 左右 | 前进速度 / 横移速度 |
-| 右摇杆左右 | 转向速度 |
+| LT / RT 扳机 | 左转 / 右转；按压深度控制角速度，两侧输入相减 |
+| 右摇杆左右 / 上下 | 镜头左右环绕 / 调整俯仰；松开后保持当前视角偏移 |
+| RB | 平滑回到机器人后方的默认视角；拨动右摇杆可中断回正 |
 | A | 当前命令清零；之后仍由摇杆决定命令 |
-| Y / 键盘 R | 重置机器人并暂停 |
+| Y / 键盘 R | 重置机器人与镜头并暂停 |
 | Start / 空格 | 暂停或继续；继续需要手柄处于连接状态 |
 | Back / Esc | 退出 |
 
-`--controller-index` 选择 XInput 0–3，默认 0。死区默认 0.15，断连会清零并暂停，重连后需重新按 Start。`--controller-config` 接受 JSON，例如 `{"deadzone":0.2,"sensitivity":[0.7,0.7,0.5]}`。完整默认值位于 `deployment/controller.py` 的 `DEFAULT_CONTROLLER`；可覆盖 axes、signs、sensitivity 和按钮位掩码。只实现 Windows XInput，尚未完成实物手柄验收；不支持 Linux 手柄。
+`--controller-index` 选择 XInput 0–3，默认 0。摇杆死区默认 0.15，扳机死区默认 0.05，断连会清零并暂停，重连后需重新按 Start。`--controller-config` 接受 JSON，例如 `{"deadzone":0.2,"trigger_deadzone":0.08,"sensitivity":[0.7,0.7,0.5]}`。默认 axes 为 `["ly","lx","triggers"]`，signs 为 `[1,-1,1]`；triggers 表示 LT 减 RT。完整默认值位于 `deployment/controller.py` 的 `DEFAULT_CONTROLLER`；可覆盖 axes、signs、sensitivity 和按钮位掩码。旧配置若显式将第三个 axes 设为 rx，需删除该覆盖或改成 triggers 并将第三个 signs 改成 1。只实现 Windows XInput，尚未完成实物手柄验收；不支持 Linux 手柄。
+
+默认镜头距机器人 4 m，俯视角 -20°，位于机器人后方，yaw 跟随机器人前方。右摇杆控制相对于该朝向的环绕偏移，松开后保持该偏移；按一下 RB 后以 0.8 s 时间常数平滑回正（约 2.4 s 恢复 95%），无需一直按住。回正期间拨动右摇杆会中断回正，松开后保持新角度。暂停时也可调整镜头。`--camera-config` 接受 JSON，例如 `{"distance":3.5,"elevation":-25,"yaw_speed":100,"pitch_speed":50,"return_time":1.2}`。角度与角速度单位为度、度/秒，return_time 单位为秒。完整默认值在 `deployment/camera.py`；可配置镜头死区、左右环绕范围和俯仰范围。
 
 地形参数集中在 `deployment/terrain.py` 的 `DEFAULT_TERRAIN`，`--terrain-config` 接受 JSON 覆盖，例如 `{"step_width":0.35,"pit_depth":1.5}`。可选 flat、rough、rough_hard、mixed；默认 mixed，seed=42、difficulty=0.5。difficulty 对参数范围进行线性插值。
 
