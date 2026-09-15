@@ -183,6 +183,7 @@ python scripts/sim2sim.py --model outputs/rpo_affordance/aff_gate_acceptance/exp
 | RB | 平滑回到机器人后方的默认视角；拨动右摇杆可中断回正 |
 | A | 当前命令清零；之后仍由摇杆决定命令 |
 | Y / 键盘 R | 重置机器人与镜头并暂停 |
+| 键盘 N / P | 跳到下一处 / 上一处地形入口，重置机器人与镜头并暂停；Start 继续 |
 | Start / 空格 | 暂停或继续；继续需要手柄处于连接状态 |
 | Back / Esc | 退出 |
 
@@ -192,8 +193,28 @@ python scripts/sim2sim.py --model outputs/rpo_affordance/aff_gate_acceptance/exp
 
 地形参数集中在 `deployment/terrain.py` 的 `DEFAULT_TERRAIN`，`--terrain-config` 接受 JSON 覆盖，例如 `{"step_width":0.35,"pit_depth":1.5}`。可选 flat、rough、rough_hard、mixed；默认 mixed，seed=42、difficulty=0.5。difficulty 对参数范围进行线性插值。
 
-mixed 为 2×4 个 8×8 米区域，按行编号：0 平地、1 粗糙、2 正坡、3 反坡、4 上楼梯、5 下楼梯、6 方块、7 踏石与沟槽。rough 的 7 号区域为粗糙地面，rough_hard 使用更高台阶/方块和踏石沟槽，flat 只有 0 号区域。默认出生在 0；`--spawn-tile` 可直接测试其他区域。保留 1 米平坦边界、2 米中心平台。地形用 0.05 米网格 heightfield 表示，台阶及坑边按此分辨率离散，沟槽有降低的坑底，没有同高度隐藏地板。
+`mixed` 是默认综合障碍场，现为 **4×4 个 8×8 米区域**，总面积 32×32 m；各区域颜色不同，可沿平坦边界通行。编号按 `x` 方向递增，每四块沿 `+y` 换行：
 
-输出默认在 `outputs/sim2sim/<时间>/`：`result.json` 保存状态、跌倒/reset、推理耗时、依赖隔离检查及实际参数；`telemetry.json` 保存每步命令、动作、力矩、饱和计数和位置。`scene/terrain.json` 保存地形配置；`scene/scene.mjb` 包含实际高度数据。`scene.xml` 是用于构建的模板，单独加载它不包含运行时填入的 heightfield 数据。原始机器人 MJCF、mesh 和资源 manifest 不改动。
+| 第一行（y=0） | 第二行（y=8） | 第三行（y=16） | 第四行（y=24） |
+|---|---|---|---|
+| 0 平地热身区 | 4 金字塔台阶 | 8 梅花桩 | 12 连续沟壑 |
+| 1 随机粗糙地面 | 5 下凹台阶 | 9 独木桥 | 13 交错踏台 |
+| 2 金字塔斜坡 | 6 随机方块 | 10 折线桥 | 14 连续波浪坡 |
+| 3 下凹斜坡 | 7 踏石与沟槽 | 11 连续矮栏 | 15 上坡—平台—下坡 |
+
+梅花桩使用静态圆柱，桥面、踏台与矮栏使用静态 box 碰撞体。桥和桩下方是默认 1 m 深的真实坑底，间隙没有同高度隐藏地板；高程扫描能同时看到顶面和坑底。波浪坡、上坡平台等使用 heightfield，原有 0–7 区的形状与编号保留。布局参考本仓库 `robolab/scripts/mujoco/sim2sim_rpo_parkour.py` 所加载的 MJCF 障碍场，部署不需要导入 robolab，也没有新增依赖。
+
+默认出生在 0；`--spawn-tile 8` 可从梅花桩入口开始，`--spawn-tile 9` 可从独木桥入口开始。8–15 区从朝向 +X 的平坦入口出生，避免直接生成在狭窄桥面或坑中；0–7 区沿用原来的中心出生点。交互模式按 N/P 切换区域，控制台显示区域编号和名称；切换后暂停，按 Start 继续。Y/R 会回到当前区域的出生点。
+
+```powershell
+# 综合场，梅花桩入口（保留原来的手柄和镜头控制）
+python scripts/sim2sim.py --model outputs_download/rpo_ame/ISAL2-RPO-AME-v0-Rough/export/model.onnx --terrain mixed --spawn-tile 8
+```
+
+`difficulty` 越高，桩径和桥宽越小、间隙和障碍高度越大。例如默认独木桥宽由 0.55 m 缩至 0.25 m，桩半径由 0.27 m 缩至 0.19 m；`difficulty=0.5` 时桥宽 0.40 m、桩半径 0.23 m。新增参数包括 `pillar_radius_range`、`pillar_gap_range`、`pillar_height_range`、`beam_width_range`、`zigzag_width_range`、`hurdle_height_range`、`block_height_range`、`wave_height_range`、`ramp_height_range`，通过 `--terrain-config` JSON 覆盖。所有长度单位为米。
+
+`flat`、`rough`、`rough_hard` 保留用于旧实验复现。原来后三个预设看起来相近，是因为它们共用八宫格，仅最后区域和部分难度参数不同；现在选 `mixed` 即可在一个场景里测试全部 16 类障碍。场景可运行不代表当前策略已经能够通过全部障碍。
+
+输出默认在 `outputs/sim2sim/<时间>/`：`result.json` 保存状态、当前出生区域 active_tile、跌倒/reset、推理耗时、依赖隔离检查及实际参数；`telemetry.json` 保存每步命令、动作、力矩、饱和计数和位置。`scene/terrain.json` 保存地形配置、布局、标签、实际出生地面位置 spawn_position，以及实体障碍的几何描述；`scene/scene.mjb` 包含实际高度数据。`scene.xml` 是用于构建的模板，单独加载它不包含运行时填入的 heightfield 数据。原始机器人 MJCF、mesh 和资源 manifest 不改动。
 
 第五阶段实际命令与验收结果见 `VALIDATION_DEPLOYMENT.md`。短程验收 checkpoint 只适合检查部署链路；实际 locomotion 效果需使用完成训练的模型评估。

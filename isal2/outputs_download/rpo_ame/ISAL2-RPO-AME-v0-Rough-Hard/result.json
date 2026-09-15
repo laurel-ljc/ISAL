@@ -1,0 +1,18 @@
+{
+  "start_iteration": 9001,
+  "completed_iterations": 18002,
+  "parameters_updated": true,
+  "losses": {
+    "value": 0.01865428532473743,
+    "surrogate": -0.007288465691090096,
+    "entropy": 0.007600760459899903
+  },
+  "modules_updated": {
+    "terrain_attention.policy_encoder": true,
+    "terrain_attention.position_encoding": true,
+    "terrain_attention.query.": true,
+    "terrain_attention.attention": true,
+    "actor": true,
+    "critic": true
+  }
+}

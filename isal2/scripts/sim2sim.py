@@ -55,7 +55,8 @@ def main():
     if args.spawn_tile not in range(len(terrain["tiles"])):
         parser.error("--spawn-tile is outside the generated tile range")
     tile = terrain["tiles"][args.spawn_tile]
-    simulator = Simulator(model, metadata, session, (*tile["center"][:2], tile["center_height"]))
+    simulator = Simulator(model, metadata, session, tile["spawn_position"])
+    active_tile = args.spawn_tile
     controller = CommandController(metadata["command_ranges"], read_config(args.controller_config))
     camera = FollowCamera(read_config(args.camera_config))
     duration = args.duration if args.duration is not None else (10 if args.headless else float("inf"))
@@ -74,6 +75,9 @@ def main():
         pad = XInput(args.controller_index)
         print("Paused. XInput: Start resume/pause, A zero, Y reset, Back exit. Keyboard: Space pause, R reset, Esc exit.")
         print("Left stick: move. LT/RT: turn left/right. Right stick: orbit/look and hold angle. RB: smoothly return behind the robot.")
+        print("Terrain bays (N/P: next/previous bay, teleport to its approach and pause):")
+        print("\n".join(f"  {t['index']:2d}: {t['label']}" for t in terrain["tiles"]))
+        print(f"Current bay: {active_tile} - {tile['label']}")
     error = None
     try:
         with context as viewer:
@@ -92,7 +96,13 @@ def main():
                     break
                 if 32 in keys and controller.connected:
                     controller.paused = not controller.paused
-                if events.get("reset") or 82 in keys:
+                switch_tile = viewer is not None and (78 in keys or 80 in keys)
+                if switch_tile:
+                    active_tile = (active_tile + (1 if 78 in keys else -1)) % len(terrain["tiles"])
+                    tile = terrain["tiles"][active_tile]
+                    simulator.spawn_offset[:] = tile["spawn_position"]
+                    print(f"Current bay: {active_tile} - {tile['label']}; paused. Press Start to resume.")
+                if events.get("reset") or 82 in keys or switch_tile:
                     simulator.reset()
                     camera.reset()
                     controller.paused = True
@@ -118,6 +128,7 @@ def main():
         raise
     finally:
         result = {**simulator.result(), "error": error, "finite": error is None,
+                  "active_tile": active_tile,
                   "model_type": metadata["model_type"], "terrain": args.terrain,
                   "arguments": vars(args), "providers": session.get_providers(),
                   "forbidden_imports": [name for name in ("torch", "rsl_rl", "isaaclab", "isal", "robolab") if name in sys.modules]}

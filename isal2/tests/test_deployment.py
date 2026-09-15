@@ -145,6 +145,8 @@ class DeploymentSceneRegressionTests(unittest.TestCase):
         saved = mujoco.MjModel.from_binary_path(str(self.output / "scene.mjb"))
         rng = np.random.default_rng(42)
         for tile in self.details["tiles"]:
+            if tile["geometry"] != "heightfield":
+                continue
             expected = tile_heights(tile["kind"], .5, DEFAULT_TERRAIN, rng)
             for model in (self.model, saved):
                 hid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_HFIELD, tile["name"])
@@ -227,7 +229,7 @@ class DeploymentCheckpointTests(unittest.TestCase):
             scan = height_scan(model, sim.data, pos, np.eye(3), metadata["height_scan"])
             self.assertTrue(np.isfinite(scan).all())
         # Query the entire stone tile from above: both the pit floor and stone tops must be hit.
-        tile = details["tiles"][-1]
+        tile = next(tile for tile in details["tiles"] if tile["kind"] == "stones_gaps")
         config = {**metadata["height_scan"], "shape": [81, 81], "resolution": .1, "height_offset": 0, "clip": [-10, 10]}
         scan = height_scan(model, sim.data, [*tile["center"][:2], 2], np.eye(3), config)
         self.assertGreater(float(scan.max() - scan.min()), .9)
