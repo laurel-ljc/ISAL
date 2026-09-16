@@ -7,10 +7,11 @@ name = "isal2"
 version = "0.1.0"
 description = "Independent RPO perceptive locomotion tasks"
 requires-python = ">=3.11"
-dependencies = ["rsl-rl-lib==3.3.0", "torch>=2.6", "numpy", "tensordict>=0.7", "gymnasium", "tensorboard", "GitPython", "PyYAML"]
+dependencies = ["rsl-rl-lib==3.3.0", "torch>=2.6", "numpy", "trimesh", "tensordict>=0.7", "gymnasium", "tensorboard", "GitPython", "PyYAML"]
 
 [project.optional-dependencies]
 deployment = ["onnx>=1.17", "mujoco>=3.3"]
+validation = ["matplotlib", "rtree"]
 # Install either onnxruntime or onnxruntime-gpu separately; do not install both.
 
 [tool.setuptools.package-data]

@@ -25,6 +25,11 @@ class RslEnvAdapter:
     def get_observations(self):
         return TensorDict(self._obs, batch_size=[self.num_envs])
 
+    @torch.inference_mode()
+    def reset(self):
+        self._obs, extras = self.env.reset()
+        return self.get_observations(), extras
+
     def step(self, actions):
         self._obs, rewards, terminated, truncated, extras = self.env.step(actions)
         if "terminal_observation" in extras:

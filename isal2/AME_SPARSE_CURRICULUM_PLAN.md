@@ -1,7 +1,42 @@
 # AME 稀疏地形课程与 checkpoint 对照方案
 
-状态：设计方案，尚未注册新任务、修改训练逻辑或启动训练。
-日期：2026-09-15。
+状态：已进入实现与验收；新增 AME/Affordance 两个稀疏任务。实际验证见 `VALIDATION_SPARSE.md`。
+设计日期：2026-09-15；实现更新：2026-09-16。
+
+## 实现修订（优先于下方最初设计）
+
+- 注册 `ISAL2-RPO-AME-Sparse-v0` 和 `ISAL2-RPO-Affordance-Sparse-v0`，薄子类分别继承原 AME/Affordance，共享 `tasks/sparse/`。
+- 完整保留 Affordance 接触采集、辅助网络、双优化器与门控；只允许同类 checkpoint 加载。
+- 第一阶段进入 robust 的目标是 **40 cm** 单梁、新放射梁及原星形梁容易档；35/30/25 cm 为后续扩展。
+- 默认梁类训练上限锁在等级 6，35/30/25 cm 先保留固定评估；完成可达性验证后提高 `SparseCfg.target_level`。
+- 阶段由验证报告达标后显式切换，重建环境；同阶段内自动升降几何等级。每次只调整命令或一个扰动档。
+- 新地形坑深固定 1 m，原星形梁保留 10 m 原几何；10 档梁宽严格离散，不添加行内随机宽度。
+- acquire 关闭随机化、推扰和执行器随机延迟。出生关节扰动 ±0.03 rad，actor/critic 地图独立。
+- warm-start 重新创建训练状态，加载后 std=0.30；Affordance 同时清空 replay 并重新预热门控。advance 保留优化器和累计辅助训练进度，清空跨阶段 replay/pending。
+- resume 恢复课程、验证历史和 RNG，但重新开始物理 episode；不承诺逐样本续接。
+- 新任务、目录、CLI 和完整运行方式见 README 的“稀疏地形任务”。正式两组 500 次更新初筛没有自动启动。
+
+### 已实现目录及职责
+
+| 目录/文件 | 功能 |
+|---|---|
+| `tasks/sparse/config.py` | acquire/robust/C0-C2 配置、随机化分组、传感器配置适配 |
+| `tasks/sparse/terrain_cfg.py` | 地形类型、精确比例、离散尺寸与补救长度 |
+| `tasks/sparse/geometry.py` | 网格、出生路线、出口、支撑区域的共同几何来源 |
+| `tasks/sparse/terrain.py` | Isaac Lab generator/importer，保留生成地形元数据 |
+| `tasks/sparse/commands.py` | 世界路线速度转 body 指令、安全出生事件 |
+| `tasks/sparse/outcomes.py` | 支撑、失败优先级、成功稳定窗口与停滞 |
+| `tasks/sparse/curriculum.py` | 分类型验证上限、分环境能力、容易档回放、持久化 |
+| `tasks/sparse/perception.py` | actor 独立带噪/漂移高程和实际采样坐标原点 |
+| `tasks/sparse/runtime.py` | 共用 mixin，复用已有 step/reward/reset 主流程 |
+| `tasks/sparse/evaluation.py` | 固定场景、统计报告、阶段门槛、独立进程验证回调 |
+| `tasks/ame_sparse/{env.py,env_cfg.py,agents/ppo_cfg.py}` | AME 薄任务与独立训练输出 |
+| `tasks/affordance_sparse/{env.py,env_cfg.py,agents/ppo_cfg.py}` | Affordance 薄任务，保留辅助训练 |
+| `modified_rsl/runners/checkpoint.py` | warm-start/resume/advance 与 RNG、模型指纹 |
+| `scripts/evaluate_sparse.py` | 独立仿真确定性评估，JSONL/CSV/JSON 输出 |
+| `tests/test_sparse_{geometry,curriculum,checkpoint,integration}.py` | 几何、课程、真实 checkpoint 和跨组件语义测试 |
+
+以下章节保留最初设计的动机与参数依据；与上述修订冲突时以上述修订和实现文档为准。
 
 ## 1. 决策
 

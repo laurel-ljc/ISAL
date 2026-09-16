@@ -27,11 +27,9 @@ class AffordanceEnv(AMEEnv):
         for i, name in enumerate(("left_feet_scanner", "right_feet_scanner")):
             hits = self.scene[name].data.ray_hits_w[..., 2]
             support.append((torch.isfinite(hits) & ((hits - feet[:, i, 2, None]).abs() <= c.support_tolerance)).float().mean(-1))
-        height = self._height_scan().clone()
-        if self.add_noise:
-            height += (2 * torch.rand_like(height) - 1) * self.cfg.noise.noise_scales.height_scan * self.obs_scales.height_scan
+        height = self._read_actor_height()
         yaw = euler_xyz_from_quat(data.root_quat_w)[2]
-        self.collector.update(height, data.root_pos_w, yaw, feet, forces, speed, torch.stack(support, -1),
+        self.collector.update(height, self._actor_map_root(), yaw, feet, forces, speed, torch.stack(support, -1),
                               self.reset_terminated, self.reset_time_outs)
 
     def _reset_idx(self, env_ids):

@@ -59,15 +59,22 @@ class BaseEnv(DirectRLEnv):
         self.feet_robot_cfg.resolve(self.scene)
         self.termination_contact_cfg = SceneEntityCfg("contact_sensor", body_names=cfg.robot.terminate_contacts_body_names or [])
         self.termination_contact_cfg.resolve(self.scene)
+        self.command_generator = self._create_command_generator()
+        self.num_actions = self.robot.num_joints
+        if self.num_actions != cfg.action_space:
+            raise ValueError(f"Expected {cfg.action_space} joints, found {self.num_actions}")
+        self._initialize_control(cfg)
+
+    def _create_command_generator(self):
+        cfg = self.cfg
         command_cfg = UniformVelocityCommandCfg(
             asset_name="robot", resampling_time_range=cfg.commands.resampling_time_range,
             rel_standing_envs=cfg.commands.rel_standing_envs, rel_heading_envs=cfg.commands.rel_heading_envs,
             heading_command=cfg.commands.heading_command, heading_control_stiffness=cfg.commands.heading_control_stiffness,
             debug_vis=cfg.commands.debug_vis, ranges=cfg.commands.ranges)
-        self.command_generator = UniformVelocityCommand(command_cfg, self)
-        self.num_actions = self.robot.num_joints
-        if self.num_actions != cfg.action_space:
-            raise ValueError(f"Expected {cfg.action_space} joints, found {self.num_actions}")
+        return UniformVelocityCommand(command_cfg, self)
+
+    def _initialize_control(self, cfg):
         self.action_scale = cfg.robot.action_scale
         self.clip_actions = cfg.normalization.clip_actions
         self.clip_obs = cfg.normalization.clip_observations
@@ -144,7 +151,7 @@ class BaseEnv(DirectRLEnv):
     def _pre_physics_step(self, actions):
         actions = actions.to(self.device).clamp(-self.clip_actions, self.clip_actions)
         self.action_buffer.append(actions)
-        self.actions = self.robot.data.default_joint_pos + self.action_scale * actions
+        self.actions.copy_(self.robot.data.default_joint_pos + self.action_scale * actions)
 
     def _apply_action(self):
         self.robot.set_joint_position_target(self.actions)
@@ -233,6 +240,7 @@ class BaseEnv(DirectRLEnv):
         # Explicit resets do not count as curriculum outcomes.
         self.extras.setdefault("log", {}).update(self.reward_manager.reset(env_ids))
         self.scene.reset(env_ids)
+        self._prepare_reset(env_ids)
         if "reset" in self.event_manager.available_modes:
             self.event_manager.apply(mode="reset", env_ids=env_ids, dt=self.step_dt,
                 global_env_step_count=self._sim_step_counter // self.cfg.decimation)
@@ -246,4 +254,7 @@ class BaseEnv(DirectRLEnv):
         self.scene.write_data_to_sim()
         self.sim.forward()
         self.scene.update(dt=0.0)
+
+    def _prepare_reset(self, env_ids):
+        """Select reset metadata before reset events and command resampling."""
 

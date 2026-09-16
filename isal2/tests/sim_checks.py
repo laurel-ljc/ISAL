@@ -13,6 +13,8 @@ def smoke_check(env, steps, check_reset):
     assert obs["policy"].shape == (env.num_envs, raw.cfg.observation_space)
     assert obs["critic"].shape == (env.num_envs, raw.cfg.state_space)
     ame = "height_scan" in obs
+    sparse = hasattr(raw.cfg, 'sparse')
+    drifting = sparse and raw.cfg.sparse.perturbations()['drift'] > 0
     if ame:
         from isaaclab.sensors.ray_caster.patterns import grid_pattern
         from isal2.modified_rsl.modules.terrain_attention import PositionEncoding2D
@@ -50,6 +52,7 @@ def smoke_check(env, steps, check_reset):
     resets = 0
     collected_samples = 0
     for step in range(steps):
+        drift_before = raw.scene['actor_height_scanner'].ray_cast_drift.clone() if sparse else None
         if check_reset and step == 5:
             # Force a timeout, independent of whether the random policy falls.
             raw.episode_length_buf[0] = raw.max_episode_length - 1
@@ -70,7 +73,14 @@ def smoke_check(env, steps, check_reset):
             critic_scan = obs["critic"].reshape(env.num_envs, 5, -1)[:, -1, -187:]
             assert torch.equal(clean, critic_scan), "Actor noise contaminated critic height"
             bound = raw.cfg.noise.noise_scales.height_scan * raw.obs_scales.height_scan if raw.add_noise else 0
-            assert (obs["height_scan"] - clean).abs().max() <= bound + 1e-6
+            if drifting:
+                sensor = raw.scene['actor_height_scanner']
+                actor_clean = (sensor.data.pos_w[:, 2, None]-sensor.data.ray_hits_w[..., 2]-.75).clamp(-1, 1)
+                actor_clean = torch.nan_to_num(actor_clean, nan=1, posinf=1, neginf=-1)*raw.obs_scales.height_scan
+                assert (obs['height_scan']-actor_clean).abs().max() <= bound+1e-6
+                assert torch.equal(drift_before[~done.bool()], sensor.ray_cast_drift[~done.bool()])
+            else:
+                assert (obs["height_scan"] - clean).abs().max() <= bound + 1e-6
             cached = {k: v.clone() for k, v in env.get_observations().items()}
             assert all(torch.equal(v, env.get_observations()[k]) for k, v in cached.items())
         assert torch.isfinite(reward).all(), "Non-finite reward"
@@ -82,7 +92,8 @@ def smoke_check(env, steps, check_reset):
                 terminal = extras["terminal_observation"]
                 assert terminal["height_scan"].shape == obs["height_scan"].shape
                 terminal_clean = terminal["critic"].reshape(env.num_envs, 5, -1)[:, -1, -187:]
-                assert (terminal["height_scan"] - terminal_clean).abs().max() <= bound + 1e-6
+                if not drifting:
+                    assert (terminal["height_scan"] - terminal_clean).abs().max() <= bound + 1e-6
                 assert terminal["height_scan"].data_ptr() != obs["height_scan"].data_ptr()
             for history in (raw.actor_obs_buffer, raw.critic_obs_buffer):
                 reset_history = history.buffer[done.bool()]
@@ -98,7 +109,13 @@ def smoke_check(env, steps, check_reset):
             assert torch.equal(untouched_critic, raw.critic_obs_buffer.buffer[1:])
             if ame:
                 assert torch.equal(untouched_scan, raw.obs_buf["height_scan"][1:]), "Partial reset resampled other scans"
+    reference_rays = 0
+    if sparse:
+        from isal2.tasks.sparse.geometry import verify_legacy_star
+        from isal2.tasks.base.terrain_generator_cfg import ROUGH_HARD_TERRAINS_CFG
+        reference_rays = verify_legacy_star(ROUGH_HARD_TERRAINS_CFG.sub_terrains['star'])
     return dict(terrain=raw.cfg.terrain_preset, num_envs=env.num_envs, steps=steps,
                 resets=resets, actor_dim=obs["policy"].shape[-1], critic_dim=obs["critic"].shape[-1], finite=True,
                 independent_imports=True, height_scan_dim=obs["height_scan"].shape[-1] if ame else 0,
-                collection=dict(raw.collector.stats) if hasattr(raw,"collector") else {}, collected_samples=collected_samples)
+                collection=dict(raw.collector.stats) if hasattr(raw,"collector") else {}, collected_samples=collected_samples,
+                sparse=sparse, actor_only_drift=drifting, legacy_star_reference_rays=reference_rays)

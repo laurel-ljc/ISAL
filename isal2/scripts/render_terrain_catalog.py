@@ -3,11 +3,77 @@ import argparse
 import importlib.util
 import json
 from pathlib import Path
+import sys
+
+
+def render_sparse_software(output):
+    """Portable render of the actual collision meshes when RTX is unavailable."""
+    from _bootstrap import bootstrap
+    bootstrap()
+    import numpy as np
+    import matplotlib
+    matplotlib.use('Agg')
+    import matplotlib.pyplot as plt
+    from matplotlib.collections import PolyCollection
+    import trimesh
+    from isal2.tasks.sparse.geometry import build_tile
+    from isal2.tasks.sparse.terrain_cfg import TYPES
+    output.mkdir(parents=True, exist_ok=True)
+    manifest = dict(renderer='Collision mesh top projection and vertical ray height section', terrains=[])
+    for kind in TYPES:
+        for level in (0, 4, 9):
+            tile = build_tile(kind, level)
+            fig, (ax, section) = plt.subplots(1, 2, figsize=(11, 5), constrained_layout=True)
+            mesh = trimesh.util.concatenate(tile.meshes)
+            upward = mesh.face_normals[:, 2] > .5
+            triangles = mesh.triangles[upward]
+            heights = triangles[:, :, 2].mean(-1)
+            order = np.argsort(heights, kind='stable')
+            colors = ['#d7e0e7' if z < -.5 else '#397f9a' for z in heights[order]]
+            ax.add_collection(PolyCollection(triangles[order, :, :2], facecolor=colors, edgecolor='none'))
+            r = tile.routes[0]
+            ax.scatter([r.spawn[0]], [r.spawn[1]], color='#d08a20', s=30, label='Spawn')
+            cut_y = 1.5 if kind in ('radial_beams', 'legacy_star') else 0.
+            ax.axhline(cut_y, color='#c56524', linestyle='--', linewidth=1, label='Height section')
+            ax.set(xlim=(-4, 4), ylim=(-4, 4), xlabel='x (m)', ylabel='y (m)', title='Collision surface: top view')
+            ax.set_aspect('equal')
+            ax.legend(loc='upper left', fontsize=8)
+            x = np.linspace(-3.99, 3.99, 800)
+            origins = np.column_stack((x, np.full_like(x, cut_y), np.full_like(x, 20.)))
+            hits, ray_ids, _ = mesh.ray.intersects_location(origins, np.tile((0., 0., -1.), (len(x), 1)))
+            z = np.full(len(x), -np.inf)
+            np.maximum.at(z, ray_ids, hits[:, 2])
+            section.plot(x, z, color='#397f9a', linewidth=1.5)
+            section.fill_between(x, -tile.params['pit_depth'], z, color='#397f9a', alpha=.2)
+            section.set(xlim=(-4, 4), ylim=(-tile.params['pit_depth']-.1, .3), xlabel='x (m)',
+                        ylabel='Surface height (m)', title=f'Ray heights at y = {cut_y:.1f} m')
+            section.grid(alpha=.2)
+            detail = (f"width {tile.params['width']:.2f} m" if kind in ('single_beam', 'radial_beams', 'legacy_star')
+                      else f"gap {tile.params['gap']:.2f} m" if 'gap' in kind
+                      else f"stone {tile.params['stone_width']:.2f} m" if 'stones' in kind else '')
+            fig.suptitle(f"{kind} | level {level} | {detail} | pit {tile.params['pit_depth']:.1f} m")
+            filename = f'sparse__{kind}__{level}.png'
+            fig.savefig(output/filename, dpi=120)
+            plt.close(fig)
+            manifest['terrains'].append(dict(tile.metadata(), image=filename))
+            print(f'CAPTURE {filename}', flush=True)
+    (output/'manifest.json').write_text(json.dumps(manifest, indent=2), encoding='utf-8')
+
+
+if '--software' in sys.argv:
+    software_parser = argparse.ArgumentParser(description='Render sparse collision meshes without Isaac Sim')
+    software_parser.add_argument('--sparse', action='store_true', required=True)
+    software_parser.add_argument('--software', action='store_true')
+    software_parser.add_argument('--output', type=Path, required=True)
+    software_args = software_parser.parse_args()
+    render_sparse_software(software_args.output)
+    raise SystemExit(0)
 
 from isaaclab.app import AppLauncher
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("--output", type=Path, required=True)
+parser.add_argument("--sparse", action="store_true", help="Render all sparse types at levels 0/4/9")
 AppLauncher.add_app_launcher_args(parser)
 args = parser.parse_args()
 args.output.mkdir(parents=True, exist_ok=True)
@@ -84,7 +150,23 @@ def capture(path, eye, target):
     print(f"CAPTURE {path.name}", flush=True)
 
 try:
-    for preset, cfg in [("rough", module.ROUGH_TERRAINS_CFG), ("rough_hard", module.ROUGH_HARD_TERRAINS_CFG)]:
+    if args.sparse:
+        from _bootstrap import bootstrap
+        bootstrap()
+        from isal2.tasks.sparse.geometry import build_tile, verify_legacy_star
+        from isal2.tasks.sparse.terrain_cfg import TYPES
+        # Verify original star geometry by independent ray-height comparisons.
+        manifest['legacy_star_reference_rays'] = verify_legacy_star(module.ROUGH_HARD_TERRAINS_CFG.sub_terrains['star'])
+        for name in TYPES:
+            for level in (0, 4, 9):
+                tile = build_tile(name, level)
+                mesh = trimesh.util.concatenate(tile.meshes)
+                put_mesh('/World/Tile', mesh, (.38, .58, .66))
+                filename = f'sparse__{name}__{level}.png'
+                capture(args.output/filename, (8, -10, 13), (0, 0, -.2))
+                manifest['terrains'].append(dict(tile.metadata(), image=filename))
+                stage.RemovePrim('/World/Tile')
+    for preset, cfg in ([] if args.sparse else [("rough", module.ROUGH_TERRAINS_CFG), ("rough_hard", module.ROUGH_HARD_TERRAINS_CFG)]):
         for index, (name, original) in enumerate(cfg.sub_terrains.items()):
             sub = original.copy()
             sub.size = cfg.size

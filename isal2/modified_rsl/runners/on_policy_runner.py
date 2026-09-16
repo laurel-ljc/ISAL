@@ -34,8 +34,11 @@ class OnPolicyRunner(RslOnPolicyRunner):
             is_distributed=self.is_distributed, gpu_world_size=self.gpu_world_size,
             gpu_global_rank=self.gpu_global_rank, device=device)
         self.last_loss_dict = {}
+        self.validation_callback = None
 
     def learn(self, num_learning_iterations, init_at_random_ep_len=False):
+        if self.validation_callback is not None:
+            self.validation_callback(self)
         if init_at_random_ep_len:
             self.env.episode_length_buf = torch.randint_like(
                 self.env.episode_length_buf, high=int(self.env.max_episode_length))
@@ -64,6 +67,12 @@ class OnPolicyRunner(RslOnPolicyRunner):
                 raise FloatingPointError(f"Non-finite training loss: {losses}")
             self.last_loss_dict = losses
             self.current_learning_iteration = it + 1
+            raw = getattr(self.env, 'unwrapped', None)
+            if raw is not None and hasattr(raw, 'sparse_phase_updates'):
+                raw.sparse_phase_updates += 1
+                raw.pop_sparse_records()
+            if self.validation_callback is not None:
+                self.validation_callback(self)
             self.logger.log(
                 it=it, start_it=start_it, total_it=total_it,
                 collect_time=collected-start, learn_time=time.perf_counter()-collected,
@@ -100,12 +109,20 @@ class OnPolicyRunner(RslOnPolicyRunner):
             if self.alg.rnd_optimizer:
                 data["rnd_optimizer_state_dict"] = self.alg.rnd_optimizer.state_dict()
         data.update(self._extra_checkpoint())
+        from .checkpoint import extra_state
+        data.update(extra_state(self))
         torch.save(data, path)
         self.logger.save_model(path, self.current_learning_iteration)
 
     def load(self, path, load_optimizer=True, map_location=None):
         # Preserve compatibility with existing ISAL2 state-dict checkpoints.
+        checkpoint = torch.load(path, map_location=map_location or self.device, weights_only=False)
+        raw = getattr(self.env, 'unwrapped', None)
+        if raw is not None and hasattr(raw, 'sparse_state_dict') and 'sparse_state' not in checkpoint:
+            raise ValueError('Old checkpoints require --warm-start for a sparse task')
         infos = super().load(path, load_optimizer=load_optimizer, map_location=map_location)
         if load_optimizer:
             self.alg.learning_rate = self.alg.optimizer.param_groups[0]["lr"]
+        from .checkpoint import restore_sparse
+        restore_sparse(self, checkpoint)
         return infos

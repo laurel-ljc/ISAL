@@ -1,6 +1,14 @@
 """Register only implemented tasks; import after starting Isaac Sim."""
 import gymnasium as gym
 
+for _family, _class in (("ame", "AME"), ("affordance", "Affordance")):
+    _id = f"ISAL2-RPO-{_class}-Sparse-v0"
+    if _id not in gym.registry:
+        gym.register(id=_id, entry_point=f"isal2.tasks.{_family}_sparse.env:{_class}SparseEnv",
+            disable_env_checker=True, kwargs={
+                "env_cfg_entry_point": f"isal2.tasks.{_family}_sparse.env_cfg:RPO{_class}SparseEnvCfg",
+                "rsl_rl_cfg_entry_point": f"isal2.tasks.{_family}_sparse.agents.ppo_cfg:{_class}SparseAgentCfg"})
+
 if "ISAL2-RPO-Affordance-v0" not in gym.registry:
     gym.register(
         id="ISAL2-RPO-Affordance-v0",

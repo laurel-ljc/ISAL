@@ -136,6 +136,71 @@ python scripts/train.py --task ISAL2-RPO-Affordance-v0 --headless --num_envs 32 
 
 第四阶段验收记录见 `VALIDATION_AFFORDANCE.md`；长程收敛和最终地形通过率仍需后续评估。
 
+## 稀疏地形任务
+
+新增 `ISAL2-RPO-AME-Sparse-v0` / `ISAL2-RPO-Affordance-Sparse-v0`。
+二者共享 `tasks/sparse/` 的几何、命令、结果和课程，分别使用原 AME / Affordance 网络及训练器。
+23 维动作、390 维本体历史、187 点当前扫描、1630 维 critic 保持不变。
+Affordance 继续接触自监督和双优化器训练；不能加载 AME checkpoint。
+
+| 参数/入口 | 含义 |
+|---|---|
+| `--terrain sparse` | 默认 10 档、20 列稀疏混合；列数须为 20 的倍数 |
+| `--terrain sparse_rescue` | 固定 80 cm 梁宽，1/2/3 m 长度补救课程，默认 3 行 |
+| `--phase acquire` | 默认理想感知、名义动力学、无推扰、执行器延迟固定 0 |
+| `--phase robust --robust-step STEP` | 按固定阶段逐项增加噪声/随机化 |
+| `--command-stage C0\|C1\|C2` | 对齐通过、较大初始偏差、侧身/平台转向；后两者保留 20% C0 |
+| `--warm-start FILE` | 严格加载同类网络与归一化，重建优化器、计数和课程，std=0.30 |
+| `--resume FILE` | 恢复同阶段训练状态；环境数量、seed、地形行列等须保持一致 |
+| `--advance-from FILE --validation-report FILE` | 校验匹配模型的验证报告，再迁入下一阶段 |
+| `--skip-evaluation` | 仅供短程调试；不评估、不解锁几何难度 |
+
+Affordance 热启动保留 U-Net 权重，清空旧 replay 和辅助计数，门控重新执行 500 轮预热＋1000 轮渐增。
+阶段迁移保留两个优化器、归一化、探索与累计门控进度，清空跨阶段 replay/pending。
+resume 恢复课程、验证历史及 RNG，重新开始 episode，不恢复瞬时物理状态。
+
+几何由 mesh 和路线元数据共同生成。连续两次成功/失败升降一级，能力上限由各类型固定验证独立解锁；
+默认梁类课程上限为等级 6（40 cm）；35/30/25 cm 仍进入固定评估。完成可达性验证后可提高 `SparseCfg.target_level`，进入后续扩展课程。
+20% 容易档回放不修改能力档连续计数。成功需穿过出口并有效支撑 0.3 s；摆动脚不按无支撑失败处理。
+停滞仅记录；成功/超时截断使用 terminal observation bootstrap，身体碰撞、坑底承载和绕路为真实终止。
+
+训练在初始更新与每 250 次阶段更新时，在独立进程评估固定场景并冻结归一化。
+核心 384 场景覆盖单梁/新放射梁/原星形梁，另加课程档位与复习场景。
+每组至少 32 次尝试，完整记录失败样本，并输出 Wilson 95% 区间。
+robust 的 clean 报告表示**关闭感知噪声/漂移的对照，动力学保留阶段设置**。
+
+进入 robust/clean 前，40 cm 单梁、新放射梁、原星形梁 40 cm 档需连续两次通过率 ≥85%、跌落率 <10%；
+平地速度跟踪误差相对热启动基线恶化不超过 10%，跌落率 <10%。
+后续 robust 顺序为 `clean → height_005 → height_010 → height_025 → proprio_25 → proprio_50 → proprio_100
+→ mass → com → material → gains → delay → push_25 → push_50 → push_100 → drift_01 → drift_02 → topology`。
+噪声逐档累计。地图漂移每回合固定，仅影响 actor，Affordance 的 query 使用实际地图采样原点；critic 与足部扫描保持干净。
+相对阶段入口下降超过 10 个百分点时停止阶段晋级，将容易档回放提高至 40%。
+
+```powershell
+# 32 环境短程工程检查，不用于能力结论
+python scripts/train.py --task ISAL2-RPO-AME-Sparse-v0 --headless --num_envs 32 --terrain_rows 3 --smoke_steps 200 --check_reset
+python scripts/train.py --task ISAL2-RPO-Affordance-Sparse-v0 --headless --num_envs 32 --terrain_rows 3 --max_iterations 10 --skip-evaluation --warm-start outputs_download/rpo_affordance/ISAL2-RPO-Affordance-v0-Rough/model_9001.pt
+
+# 正式 A/B 初筛：相同 seed、更新数与采样 std；以下命令不由文档自动执行
+python scripts/train.py --task ISAL2-RPO-AME-Sparse-v0 --headless --num_envs 1024 --seed 42 --max_iterations 500 --warm-start outputs_download/rpo_ame/ISAL2-RPO-AME-v0-Rough/model_9001.pt --run_name sparse_A
+python scripts/train.py --task ISAL2-RPO-AME-Sparse-v0 --headless --num_envs 1024 --seed 42 --max_iterations 500 --warm-start outputs_download/rpo_ame/ISAL2-RPO-AME-v0-Rough-Hard/model_18002.pt --run_name sparse_B
+
+# 独立评估；输出 stage/episodes.jsonl、groups.csv、summary.json 和场景清单
+python scripts/evaluate_sparse.py --task ISAL2-RPO-AME-Sparse-v0 --checkpoint outputs/rpo_ame_sparse/sparse_A/model_500.pt --output outputs/evaluation/sparse_A_500 --headless
+
+# 仅在已达标时接受；checkpoint 与报告须匹配
+python scripts/train.py --task ISAL2-RPO-AME-Sparse-v0 --phase robust --robust-step clean --advance-from outputs/rpo_ame_sparse/sparse_A/model_500.pt --validation-report outputs/evaluation/sparse_A_500/stage/summary.json --headless --num_envs 1024
+
+python scripts/render_terrain_catalog.py --sparse --output outputs/sparse_catalog --headless --enable_cameras
+# RTX 无法输出画面时，渲染同一份碰撞三角网格（无需启动仿真）
+python scripts/render_terrain_catalog.py --sparse --software --output outputs/sparse_catalog_software
+python -m unittest discover -s tests -p 'test_sparse*.py'
+```
+
+输出分别位于 `outputs/rpo_ame_sparse/` 与 `outputs/rpo_affordance_sparse/`。
+CPU 射线验证和软件图册使用 `rtree`、`matplotlib`（`validation` 可选依赖组）；已有 Isaac Lab 验证环境已具备。
+结构和最初设计见 `AME_SPARSE_CURRICULUM_PLAN.md`，实际验收见 `VALIDATION_SPARSE.md`。
+
 ## ONNX 导出
 
 导出支持三个任务，读取可信的本地训练 checkpoint；不会启动 Isaac Sim。默认读取 checkpoint 同目录的 `env.yaml`、`joint_names.json`，网络配置来自 checkpoint 的 `train_cfg`。移动文件后可用 `--env-config`、`--joint-names`、`--agent-config` 显式指定。缺失配置或关节映射不完整会报错。

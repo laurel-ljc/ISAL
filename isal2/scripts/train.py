@@ -20,11 +20,20 @@ def main():
     from isaaclab.app import AppLauncher
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--task", default="ISAL2-RPO-Base-v0")
-    parser.add_argument("--terrain", choices=["flat", "rough", "rough_hard"], default=None)
+    parser.add_argument("--terrain", default=None, help="Terrain preset validated by the selected task")
     parser.add_argument("--num_envs", type=int, default=4096)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--max_iterations", type=int, default=12001, help="Additional updates, including on resume")
-    parser.add_argument("--resume", type=Path, help="Checkpoint file to resume")
+    load_group = parser.add_mutually_exclusive_group()
+    load_group.add_argument("--resume", type=Path, help="Checkpoint file to resume")
+    load_group.add_argument("--warm-start", type=Path, help="Strict model-only initialization with fresh training state")
+    load_group.add_argument("--advance-from", type=Path, help="Sparse checkpoint to advance one stage")
+    parser.add_argument("--validation-report", type=Path)
+    parser.add_argument("--phase", choices=['acquire', 'robust'])
+    parser.add_argument("--command-stage", choices=['C0', 'C1', 'C2'])
+    parser.add_argument("--robust-step")
+    parser.add_argument("--replay-probability", type=float)
+    parser.add_argument("--skip-evaluation", action='store_true', help="Debug only: no validation or curriculum unlocking")
     parser.add_argument("--run_name", default=None)
     parser.add_argument("--terrain_rows", type=int)
     parser.add_argument("--terrain_cols", type=int)
@@ -60,6 +69,25 @@ def main():
         cfg.sim.log_dir = str(ROOT / "outputs" / "sim_logs")
         cfg.seed = args.seed
         cfg.sim.device = args.device
+        sparse = hasattr(cfg, 'sparse')
+        if any(x is not None for x in (args.phase, args.command_stage, args.robust_step, args.replay_probability)) and not sparse:
+            parser.error('Sparse stage options require a Sparse task')
+        if sparse:
+            # Resume/advance inherit source settings unless explicitly overridden.
+            if args.resume or args.advance_from:
+                saved = torch.load(args.resume or args.advance_from, map_location='cpu', weights_only=False)
+                if 'sparse_state' not in saved:
+                    parser.error('Legacy checkpoints must use --warm-start')
+                for key, value in saved['sparse_state']['signature'].items():
+                    setattr(cfg.sparse, key, value)
+            for key, value in (('phase', args.phase), ('command_stage', args.command_stage),
+                               ('robust_step', args.robust_step), ('replay_probability', args.replay_probability)):
+                if value is not None:
+                    setattr(cfg.sparse, key, value)
+            if not (args.resume or args.advance_from) and (cfg.sparse.phase != 'acquire' or cfg.sparse.command_stage != 'C0') and not args.smoke_steps:
+                parser.error('Training later stages requires --advance-from and --validation-report')
+        if args.advance_from and not (sparse and args.validation_report):
+            parser.error('--advance-from requires a Sparse task and --validation-report')
         cfg.configure(args.terrain, args.num_envs, args.terrain_rows, args.terrain_cols)
         agent.seed, agent.device, agent.max_iterations = args.seed, args.device, args.max_iterations
         if hasattr(agent, "configure_from_env"):
@@ -93,6 +121,17 @@ def main():
             runner = runner_cls(env, agent.to_dict(), str(log_dir), args.device)
             if args.resume:
                 runner.load(str(args.resume.resolve()), map_location=args.device)
+            elif args.warm_start:
+                from isal2.modified_rsl.runners.checkpoint import warm_start
+                warm_start(runner, str(args.warm_start.resolve()))
+            elif args.advance_from:
+                from isal2.modified_rsl.runners.checkpoint import advance
+                advance(runner, str(args.advance_from.resolve()), json.loads(args.validation_report.read_text(encoding='utf-8')))
+            if sparse:
+                (log_dir / 'terrain_atlas.json').write_text(json.dumps(env.unwrapped.scene.terrain.sparse_atlas, indent=2), encoding='utf-8')
+                if not args.skip_evaluation:
+                    from isal2.tasks.sparse.evaluation import validation_callback
+                    runner.validation_callback = validation_callback(args.task, log_dir, args.device)
             before = {name: p.detach().clone() for name, p in runner.alg.policy.named_parameters()}
             start_iteration = runner.current_learning_iteration
             runner.learn(args.max_iterations)
@@ -129,7 +168,7 @@ def main():
         if env is not None:
             env.close()
         print("[ISAL2] Closing simulator", flush=True)
-        app.close()
+        app.close(skip_cleanup=True)
 
 
 if __name__ == "__main__":
