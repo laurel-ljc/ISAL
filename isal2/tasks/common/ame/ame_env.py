@@ -1,6 +1,6 @@
 """AME adds a cached actor scan while retaining base observation/reset semantics."""
 import torch
-from isal2.tasks.base.base_env import BaseEnv
+from isal2.tasks.common.base.base_env import BaseEnv
 
 
 class AMEEnv(BaseEnv):

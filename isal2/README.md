@@ -2,6 +2,8 @@
 
 当前默认任务为 `ISAL2-RPO-AME-Stage1-v0`。本次实现 AME 的两个阶段，Affordance 两阶段留待后续实现。旧任务已完整迁移到 `deprecated_tasks`，仍可用原来的任务 ID 显式启动；`scripts/list_envs.py` 会标出 active/deprecated。
 
+`tasks` 顶层只有 `ame_stage1`、`ame_stage2` 和 `common`。`common/base` 保存公共环境和 MDP，`common/ame` 保存 AME 感知与策略配置，`common/course` 保存地形、命令和课程；这些公共模块不注册任务。旧任务完整实现只保留在 `deprecated_tasks`。
+
 ## 新任务训练与恢复
 
 以下命令在 `isal2` 目录、已配置的 `env_isaaclab` 环境中执行：
@@ -32,7 +34,7 @@ Stage2 允许不传 `--warm-start` 从零训练。warm-start 沿用既有语义�
 
 Stage1 无 base 推扰；Stage2 每5–8秒给根水平速度叠加各轴 ±0.10 m/s 的增量，不修改竖直或角速度。两阶段保持其他随机化一致。
 
-默认 Stage1 为10行×14列，Stage2 为10行×10列，每种类型各两列。行数固定为10；`--terrain_cols` 必须分别为7或5的正整数倍。任务限定自己的 stage 地形，不接受 `--terrain rough` 等旧预设。几何参数位于 `tasks/course/geometry.py`，任务配置、命令和生命周期逻辑位于同目录，其余 MDP 沿用 `tasks/base/mdp`。任务入口分别为 `tasks/ame_stage1`、`tasks/ame_stage2`。
+默认 Stage1 为10行×14列，Stage2 为10行×10列，每种类型各两列。行数固定为10；`--terrain_cols` 必须分别为7或5的正整数倍。任务限定自己的 stage 地形，不接受 `--terrain rough` 等旧预设。几何参数位于 `tasks/common/course/geometry.py`，任务配置、命令和生命周期逻辑位于同目录，其余 MDP 沿用 `tasks/common/base/mdp`。任务入口分别为 `tasks/ame_stage1`、`tasks/ame_stage2`。
 
 踏石最小有效宽度0.30 m。间隙设计依据0.8 m前视范围，预留0.2 m接近边缘距离及0.2 m对岸落脚可见区域；几何测试还覆盖实际路径间隙和多个扫描网格相位。参数是保守的初始设计，测试不代表已经训练收敛。
 
@@ -84,15 +86,15 @@ python -m isal2.scripts.list_envs
 | 内容 | 修改位置 |
 |---|---|
 | 机器人初始姿态、PD、延迟、关节限制 | `assets/robots/rpo.py` |
-| 基础时间步、命令、噪声、随机化、历史长度 | `tasks/base/base_config.py` |
-| RPO 环境、地形选择、观测维度 | `tasks/base/base_env_cfg.py` |
-| 地形比例、难度范围、地图尺寸 | `tasks/base/terrain_generator_cfg.py` |
-| 场景和传感器 | `tasks/base/scene_cfg.py` |
-| 奖励权重 | `tasks/base/rpo_env_cfg.py` |
-| 奖励函数、curriculum 决策 | `tasks/base/mdp/` |
-| 网络尺寸、PPO 参数、日志配置 | `tasks/base/agents/ppo_cfg.py` |
-| AME 高程偏置、噪声覆盖 | `tasks/ame/ame_env_cfg.py` |
-| AME CNN、注意力、网络与训练参数 | `tasks/ame/agents/ppo_cfg.py` |
+| 基础时间步、命令、噪声、随机化、历史长度 | `deprecated_tasks/base/base_config.py` |
+| RPO 环境、地形选择、观测维度 | `deprecated_tasks/base/base_env_cfg.py` |
+| 地形比例、难度范围、地图尺寸 | `deprecated_tasks/base/terrain_generator_cfg.py` |
+| 场景和传感器 | `deprecated_tasks/base/scene_cfg.py` |
+| 奖励权重 | `deprecated_tasks/base/rpo_env_cfg.py` |
+| 奖励函数、curriculum 决策 | `deprecated_tasks/base/mdp/` |
+| 网络尺寸、PPO 参数、日志配置 | `deprecated_tasks/base/agents/ppo_cfg.py` |
+| AME 高程偏置、噪声覆盖 | `deprecated_tasks/ame/ame_env_cfg.py` |
+| AME CNN、注意力、网络与训练参数 | `deprecated_tasks/ame/agents/ppo_cfg.py` |
 
 配置的 `configure()` 先应用地形和环境数量，并重建场景、计算观测维度；额外的程序化奖励覆盖放在此调用之后。
 
@@ -176,8 +178,8 @@ AME 输出在 `outputs/rpo_ame/`。恢复要求相同网络、观测布局和地
 
 | 内容 | 参数入口 |
 |---|---|
-| 接触阈值、观察窗、脚掌偏移、标签权重、pending 数量 | `tasks/affordance/collection.py` 的 `ContactCollectionCfg`，由 `affordance_env_cfg.py` 持有 |
-| U-Net 通道、监督更新、replay 容量/时限、gate | `tasks/affordance/agents/ppo_cfg.py` |
+| 接触阈值、观察窗、脚掌偏移、标签权重、pending 数量 | `deprecated_tasks/affordance/collection.py` 的 `ContactCollectionCfg`，由 `affordance_env_cfg.py` 持有 |
+| U-Net 通道、监督更新、replay 容量/时限、gate | `deprecated_tasks/affordance/agents/ppo_cfg.py` |
 | 两阶段 runner 与恢复 | `modified_rsl/runners/affordance_runner.py` |
 
 ```powershell
@@ -194,7 +196,7 @@ python scripts/train.py --task ISAL2-RPO-Affordance-v0 --headless --num_envs 32 
 ## 稀疏地形任务
 
 新增 `ISAL2-RPO-AME-Sparse-v0` / `ISAL2-RPO-Affordance-Sparse-v0`。
-二者共享 `tasks/sparse/` 的几何、命令、结果和课程，分别使用原 AME / Affordance 网络及训练器。
+二者共享 `deprecated_tasks/sparse/` 的几何、命令、结果和课程，分别使用原 AME / Affordance 网络及训练器。
 23 维动作、390 维本体历史、187 点当前扫描、1630 维 critic 保持不变。
 Affordance 继续接触自监督和双优化器训练；不能加载 AME checkpoint。
 

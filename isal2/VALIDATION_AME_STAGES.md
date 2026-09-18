@@ -40,6 +40,8 @@
 
 ## 验证边界
 
+目录整理后，公共模块统一位于 `tasks/common/{base,ame,course}`，任务顶层仅保留两个阶段入口和 `common`。已重新通过85项测试（`outputs/common_layout_tests.log`），并通过4环境×30步的Stage2仿真、成功终止、超时、局部重置和实际推扰检查（`outputs/rpo_ame_stage2/common_layout_smoke/result.json`）。
+
 短程 PPO 和 smoke 验证工程闭环，不证明机器人已学会所有地形，尚未进行4096环境长程收敛实验。
 
 本机 Isaac Sim 日志出现 Vulkan/ShaderCache、缓存权限和 SharedMutex 相关信息；若干进程在写出成功 `result.json` 后停留于 `Closing simulator`，已在确认结果保存后终止这些验证进程。部分运行正常退出。此关闭阶段现象没有在本次任务中修改或宣称修复。

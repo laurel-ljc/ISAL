@@ -34,8 +34,8 @@ def load_pure(name, path):
     return module
 
 
-terrain_moves = load_pure("_curriculum", "tasks/base/mdp/curriculum.py").terrain_moves
-BaseAgentCfg = load_pure("_agent_cfg", "tasks/base/agents/ppo_cfg.py").BaseAgentCfg
+terrain_moves = load_pure("_curriculum", "deprecated_tasks/base/mdp/curriculum.py").terrain_moves
+BaseAgentCfg = load_pure("_agent_cfg", "deprecated_tasks/base/agents/ppo_cfg.py").BaseAgentCfg
 
 
 class CoreTests(unittest.TestCase):

@@ -1,6 +1,6 @@
 """AME changes the actor architecture, retaining base PPO defaults."""
 from dataclasses import dataclass
-from isal2.tasks.base.agents.ppo_cfg import BaseAgentCfg
+from isal2.tasks.common.base.agents.ppo_cfg import BaseAgentCfg
 
 
 @dataclass

@@ -40,7 +40,7 @@ from isaaclab.managers import SceneEntityCfg
 from isaaclab.sensors import ContactSensor
 
 if TYPE_CHECKING:
-    from isal2.tasks.base.base_env import BaseEnv
+    from isal2.tasks.common.base.base_env import BaseEnv
 
 
 def track_lin_vel_xy_yaw_frame_exp(

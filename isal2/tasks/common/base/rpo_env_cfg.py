@@ -33,9 +33,9 @@ from isaaclab.managers import RewardTermCfg as RewTerm
 from isaaclab.managers.scene_entity_cfg import SceneEntityCfg
 from isaaclab.utils import configclass
 
-from isal2.tasks.base import mdp
+from isal2.tasks.common.base import mdp
 from isal2.assets.robots import RPO_CFG
-from isal2.tasks.base import (  # noqa:F401
+from isal2.tasks.common.base import (  # noqa:F401
     BaseAgentCfg, 
     BaseEnvCfg, 
     RewardCfg, 

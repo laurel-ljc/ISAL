@@ -1,6 +1,6 @@
 """Base locomotion with current actor height scan and a privileged MLP critic."""
 from isaaclab.utils import configclass
-from isal2.tasks.base.base_env_cfg import RPOBaseEnvCfg
+from isal2.tasks.common.base.base_env_cfg import RPOBaseEnvCfg
 
 
 @configclass

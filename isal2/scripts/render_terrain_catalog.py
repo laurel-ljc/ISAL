@@ -102,7 +102,7 @@ import omni.replicator.core as rep
 from pxr import UsdGeom, UsdLux, Gf
 from isaaclab.terrains.height_field import HfTerrainBaseCfg
 
-source = Path(__file__).resolve().parents[1] / "tasks/base/terrain_generator_cfg.py"
+source = Path(__file__).resolve().parents[1] / "deprecated_tasks/base/terrain_generator_cfg.py"
 spec = importlib.util.spec_from_file_location("catalog_terrain_cfg", source)
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)

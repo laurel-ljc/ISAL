@@ -18,7 +18,7 @@ import trimesh
 from isaaclab.terrains.height_field import HfTerrainBaseCfg
 
 try:
-    source = Path(__file__).resolve().parents[1] / "tasks/base/terrain_generator_cfg.py"
+    source = Path(__file__).resolve().parents[1] / "deprecated_tasks/base/terrain_generator_cfg.py"
     spec = importlib.util.spec_from_file_location("catalog_cfg", source)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)

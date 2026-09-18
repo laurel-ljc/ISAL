@@ -1,6 +1,6 @@
 """Additional live course lifecycle checks, used by --smoke_steps --check_reset."""
 import torch
-from isal2.tasks.course.commands import push_base_horizontal
+from isal2.tasks.common.course.commands import push_base_horizontal
 
 
 def check_course(env):

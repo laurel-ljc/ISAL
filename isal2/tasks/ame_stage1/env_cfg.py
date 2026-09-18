@@ -1,6 +1,6 @@
 from isaaclab.utils import configclass
-from isal2.tasks.ame.ame_env_cfg import RPOAMEEnvCfg
-from isal2.tasks.course.config import CourseCfg, CourseConfigMixin
+from isal2.tasks.common.ame.ame_env_cfg import RPOAMEEnvCfg
+from isal2.tasks.common.course.config import CourseCfg, CourseConfigMixin
 
 
 @configclass
