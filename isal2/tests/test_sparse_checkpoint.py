@@ -7,15 +7,15 @@ from types import SimpleNamespace
 import unittest
 import torch
 from tensordict import TensorDict
-from isal2.tasks.ame_sparse.agents.ppo_cfg import AMESparseAgentCfg
-from isal2.tasks.affordance_sparse.agents.ppo_cfg import AffordanceSparseAgentCfg
-from isal2.tasks.affordance.collection import ContactCollector
+from isal2.deprecated_tasks.ame_sparse.agents.ppo_cfg import AMESparseAgentCfg
+from isal2.deprecated_tasks.affordance_sparse.agents.ppo_cfg import AffordanceSparseAgentCfg
+from isal2.deprecated_tasks.affordance.collection import ContactCollector
 from isal2.modified_rsl.runners import OnPolicyRunner
 from isal2.modified_rsl.runners.affordance_runner import AffordanceRunner
 from isal2.modified_rsl.runners.checkpoint import warm_start, rng_state, restore_rng, model_digest, advance
-from isal2.tasks.sparse.curriculum import SparseCurriculum
-from isal2.tasks.sparse.evaluation import check_advance
-from isal2.tasks.sparse.config import SparseCfg
+from isal2.deprecated_tasks.sparse.curriculum import SparseCurriculum
+from isal2.deprecated_tasks.sparse.evaluation import check_advance
+from isal2.deprecated_tasks.sparse.config import SparseCfg
 
 
 class FakeEnv:

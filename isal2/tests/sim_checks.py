@@ -14,6 +14,7 @@ def smoke_check(env, steps, check_reset):
     assert obs["critic"].shape == (env.num_envs, raw.cfg.state_space)
     ame = "height_scan" in obs
     sparse = hasattr(raw.cfg, 'sparse')
+    course = hasattr(raw.cfg, 'course')
     drifting = sparse and raw.cfg.sparse.perturbations()['drift'] > 0
     if ame:
         from isaaclab.sensors.ray_caster.patterns import grid_pattern
@@ -27,7 +28,7 @@ def smoke_check(env, steps, check_reset):
         starts, _ = grid_pattern(scan_cfg.pattern_cfg, env.device)
         coords = PositionEncoding2D(32, 32, (11, 17), .1).coordinates.to(env.device)
         assert torch.allclose(starts[:, :2], coords[0].flatten(1).T, atol=1e-6), "Ray/token XY ordering mismatch"
-    levels = raw.scene.terrain.terrain_levels.clone() if hasattr(raw.scene.terrain, "terrain_levels") else None
+    levels = raw.scene.terrain.terrain_levels.clone() if hasattr(raw.scene.terrain, "terrain_levels") and not course else None
     raw.reset()
     if levels is not None:
         assert torch.equal(levels, raw.scene.terrain.terrain_levels), "Initial/explicit reset changed curriculum"
@@ -110,12 +111,17 @@ def smoke_check(env, steps, check_reset):
             if ame:
                 assert torch.equal(untouched_scan, raw.obs_buf["height_scan"][1:]), "Partial reset resampled other scans"
     reference_rays = 0
+    course_checks = {}
+    if course and check_reset:
+        from isal2.tests.course_sim_checks import check_course
+        course_checks = check_course(env)
     if sparse:
-        from isal2.tasks.sparse.geometry import verify_legacy_star
-        from isal2.tasks.base.terrain_generator_cfg import ROUGH_HARD_TERRAINS_CFG
+        from isal2.deprecated_tasks.sparse.geometry import verify_legacy_star
+        from isal2.deprecated_tasks.base.terrain_generator_cfg import ROUGH_HARD_TERRAINS_CFG
         reference_rays = verify_legacy_star(ROUGH_HARD_TERRAINS_CFG.sub_terrains['star'])
     return dict(terrain=raw.cfg.terrain_preset, num_envs=env.num_envs, steps=steps,
                 resets=resets, actor_dim=obs["policy"].shape[-1], critic_dim=obs["critic"].shape[-1], finite=True,
                 independent_imports=True, height_scan_dim=obs["height_scan"].shape[-1] if ame else 0,
                 collection=dict(raw.collector.stats) if hasattr(raw,"collector") else {}, collected_samples=collected_samples,
-                sparse=sparse, actor_only_drift=drifting, legacy_star_reference_rays=reference_rays)
+                sparse=sparse, actor_only_drift=drifting, legacy_star_reference_rays=reference_rays,
+                course_checks=course_checks)

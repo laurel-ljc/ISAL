@@ -28,6 +28,8 @@ def model_digest(state):
 
 def extra_state(runner):
     raw = getattr(runner.env, 'unwrapped', None)
+    if raw is not None and hasattr(raw, 'course_state_dict'):
+        return dict(course_state=raw.course_state_dict(), rng_state=rng_state())
     if raw is None or not hasattr(raw, 'sparse_state_dict'):
         return {}
     return dict(sparse_state=raw.sparse_state_dict(), rng_state=rng_state())
@@ -35,6 +37,11 @@ def extra_state(runner):
 
 def restore_sparse(runner, checkpoint):
     raw = getattr(runner.env, 'unwrapped', None)
+    if raw is not None and hasattr(raw, 'course_state_dict'):
+        raw.load_course_state_dict(checkpoint['course_state'])
+        restore_rng(checkpoint['rng_state'])
+        runner.env.reset()
+        return
     if raw is None or not hasattr(raw, 'sparse_state_dict'):
         return
     if 'sparse_state' not in checkpoint:
@@ -72,7 +79,7 @@ def warm_start(runner, path, std=.30):
 
 
 def advance(runner, path, report):
-    from isal2.tasks.sparse.evaluation import check_advance
+    from isal2.deprecated_tasks.sparse.evaluation import check_advance
     checkpoint = torch.load(path, map_location=runner.device, weights_only=False)
     raw = runner.env.unwrapped
     check_advance(checkpoint, raw.cfg.sparse.signature(), report, raw.cfg.terrain_preset)

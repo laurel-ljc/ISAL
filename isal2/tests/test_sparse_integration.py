@@ -2,9 +2,9 @@
 import unittest
 from types import SimpleNamespace
 import torch
-from isal2.tasks.affordance.collection import ContactCollector, world_to_map
+from isal2.deprecated_tasks.affordance.collection import ContactCollector, world_to_map
 from isal2.utils.rsl_env import RslEnvAdapter
-from isal2.tasks.sparse.evaluation import summarize
+from isal2.deprecated_tasks.sparse.evaluation import summarize
 
 
 class SparseIntegrationTests(unittest.TestCase):

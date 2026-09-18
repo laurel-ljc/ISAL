@@ -15,9 +15,11 @@ import isal2.tasks
 
 
 def main():
+    import isal2.deprecated_tasks
     for name, spec in sorted(gym.registry.items()):
         if name.startswith("ISAL2-"):
-            print(f"{name}\n  env: {spec.entry_point}\n  config: {spec.kwargs['env_cfg_entry_point']}\n  agent: {spec.kwargs['rsl_rl_cfg_entry_point']}")
+            status = 'deprecated' if '.deprecated_tasks.' in spec.entry_point else 'active'
+            print(f"[{status}] {name}\n  env: {spec.entry_point}\n  config: {spec.kwargs['env_cfg_entry_point']}\n  agent: {spec.kwargs['rsl_rl_cfg_entry_point']}")
 
 
 if __name__ == "__main__":

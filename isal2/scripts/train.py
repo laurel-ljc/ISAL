@@ -19,7 +19,7 @@ ROOT = bootstrap()
 def main():
     from isaaclab.app import AppLauncher
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--task", default="ISAL2-RPO-Base-v0")
+    parser.add_argument("--task", default="ISAL2-RPO-AME-Stage1-v0")
     parser.add_argument("--terrain", default=None, help="Terrain preset validated by the selected task")
     parser.add_argument("--num_envs", type=int, default=4096)
     parser.add_argument("--seed", type=int, default=42)
@@ -109,6 +109,9 @@ def main():
         joint_names = env.unwrapped.robot.joint_names
         (log_dir / "joint_names.json").write_text(json.dumps(joint_names, indent=2), encoding="utf-8")
         print(f"ISAL2 output: {log_dir}", flush=True)
+        if hasattr(cfg, 'course'):
+            (log_dir / 'terrain_atlas.json').write_text(
+                json.dumps(env.unwrapped.scene.terrain.course_atlas, indent=2), encoding='utf-8')
         if args.smoke_steps:
             from isal2.tests.sim_checks import smoke_check
             result = smoke_check(env, args.smoke_steps, args.check_reset)
@@ -130,7 +133,7 @@ def main():
             if sparse:
                 (log_dir / 'terrain_atlas.json').write_text(json.dumps(env.unwrapped.scene.terrain.sparse_atlas, indent=2), encoding='utf-8')
                 if not args.skip_evaluation:
-                    from isal2.tasks.sparse.evaluation import validation_callback
+                    from isal2.deprecated_tasks.sparse.evaluation import validation_callback
                     runner.validation_callback = validation_callback(args.task, log_dir, args.device)
             before = {name: p.detach().clone() for name, p in runner.alg.policy.named_parameters()}
             start_iteration = runner.current_learning_iteration

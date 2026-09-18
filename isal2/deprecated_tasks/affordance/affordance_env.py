@@ -1,7 +1,7 @@
 """Collect real contact outcomes after done evaluation and before automatic reset."""
 import torch
 from isaaclab.utils.math import quat_apply, euler_xyz_from_quat
-from isal2.tasks.ame.ame_env import AMEEnv
+from isal2.deprecated_tasks.ame.ame_env import AMEEnv
 from .collection import ContactCollector
 
 

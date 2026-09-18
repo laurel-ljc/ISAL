@@ -118,6 +118,10 @@ class OnPolicyRunner(RslOnPolicyRunner):
         # Preserve compatibility with existing ISAL2 state-dict checkpoints.
         checkpoint = torch.load(path, map_location=map_location or self.device, weights_only=False)
         raw = getattr(self.env, 'unwrapped', None)
+        if raw is not None and hasattr(raw, 'course_state_dict'):
+            if 'course_state' not in checkpoint:
+                raise ValueError('Old checkpoints require --warm-start for a stage task')
+            raw.validate_course_state(checkpoint['course_state'])
         if raw is not None and hasattr(raw, 'sparse_state_dict') and 'sparse_state' not in checkpoint:
             raise ValueError('Old checkpoints require --warm-start for a sparse task')
         infos = super().load(path, load_optimizer=load_optimizer, map_location=map_location)

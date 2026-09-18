@@ -6,8 +6,8 @@ from uuid import uuid4
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 import torch
 from tensordict import TensorDict
-from isal2.tasks.affordance.collection import ContactCollector, ContactCollectionCfg, world_to_map
-from isal2.tasks.affordance.agents.ppo_cfg import AffordanceAgentCfg
+from isal2.deprecated_tasks.affordance.collection import ContactCollector, ContactCollectionCfg, world_to_map
+from isal2.deprecated_tasks.affordance.agents.ppo_cfg import AffordanceAgentCfg
 from isal2.modified_rsl.modules.affordance import AffordanceUNet
 from isal2.modified_rsl.algorithms.affordance_replay import AffordanceReplay
 from isal2.modified_rsl.runners.affordance_runner import AffordanceRunner

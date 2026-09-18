@@ -13,7 +13,7 @@ from isal2.modified_rsl.algorithms import PPO
 from isal2.modified_rsl.modules import ActorCriticAME
 from isal2.modified_rsl.modules.terrain_attention import TerrainAttention
 from isal2.modified_rsl.runners import OnPolicyRunner
-from isal2.tasks.ame.agents.ppo_cfg import AMEAgentCfg
+from isal2.deprecated_tasks.ame.agents.ppo_cfg import AMEAgentCfg
 
 
 def observations(n=4):

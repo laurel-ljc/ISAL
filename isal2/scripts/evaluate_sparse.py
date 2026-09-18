@@ -26,10 +26,10 @@ def main():
     try:
         import torch
         import gymnasium as gym
-        import isal2.tasks
+        import isal2.deprecated_tasks
         from isal2.utils.task_config import load_task_configs
         from isal2.utils.rsl_env import RslEnvAdapter
-        from isal2.tasks.sparse.evaluation import manifest, write_report
+        from isal2.deprecated_tasks.sparse.evaluation import manifest, write_report
         from isal2.modified_rsl.runners import OnPolicyRunner
         checkpoint = torch.load(args.checkpoint, map_location=args.device, weights_only=False)
         source = checkpoint['sparse_state']

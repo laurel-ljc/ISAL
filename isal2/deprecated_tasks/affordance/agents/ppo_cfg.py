@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from isal2.tasks.ame.agents.ppo_cfg import AMEAgentCfg
+from isal2.deprecated_tasks.ame.agents.ppo_cfg import AMEAgentCfg
 
 
 @dataclass

@@ -16,8 +16,8 @@ def render_sparse_software(output):
     import matplotlib.pyplot as plt
     from matplotlib.collections import PolyCollection
     import trimesh
-    from isal2.tasks.sparse.geometry import build_tile
-    from isal2.tasks.sparse.terrain_cfg import TYPES
+    from isal2.deprecated_tasks.sparse.geometry import build_tile
+    from isal2.deprecated_tasks.sparse.terrain_cfg import TYPES
     output.mkdir(parents=True, exist_ok=True)
     manifest = dict(renderer='Collision mesh top projection and vertical ray height section', terrains=[])
     for kind in TYPES:
@@ -153,8 +153,8 @@ try:
     if args.sparse:
         from _bootstrap import bootstrap
         bootstrap()
-        from isal2.tasks.sparse.geometry import build_tile, verify_legacy_star
-        from isal2.tasks.sparse.terrain_cfg import TYPES
+        from isal2.deprecated_tasks.sparse.geometry import build_tile, verify_legacy_star
+        from isal2.deprecated_tasks.sparse.terrain_cfg import TYPES
         # Verify original star geometry by independent ray-height comparisons.
         manifest['legacy_star_reference_rays'] = verify_legacy_star(module.ROUGH_HARD_TERRAINS_CFG.sub_terrains['star'])
         for name in TYPES:

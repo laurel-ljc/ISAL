@@ -3,10 +3,10 @@ import math
 import unittest
 import numpy as np
 import torch
-from isal2.tasks.sparse.geometry import build_tile
-from isal2.tasks.sparse.terrain_cfg import TYPES, WIDTHS, columns
-from isal2.tasks.sparse.commands import route_velocity
-from isal2.tasks.sparse.outcomes import inside_rectangles
+from isal2.deprecated_tasks.sparse.geometry import build_tile
+from isal2.deprecated_tasks.sparse.terrain_cfg import TYPES, WIDTHS, columns
+from isal2.deprecated_tasks.sparse.commands import route_velocity
+from isal2.deprecated_tasks.sparse.outcomes import inside_rectangles
 
 
 class SparseGeometryTests(unittest.TestCase):

@@ -1,9 +1,9 @@
 import unittest
 import torch
-from isal2.tasks.sparse.config import SparseCfg, ROBUST_STEPS
-from isal2.tasks.sparse.curriculum import SparseCurriculum
-from isal2.tasks.sparse.outcomes import OutcomeTracker
-from isal2.tasks.sparse.evaluation import manifest, summarize, wilson
+from isal2.deprecated_tasks.sparse.config import SparseCfg, ROBUST_STEPS
+from isal2.deprecated_tasks.sparse.curriculum import SparseCurriculum
+from isal2.deprecated_tasks.sparse.outcomes import OutcomeTracker
+from isal2.deprecated_tasks.sparse.evaluation import manifest, summarize, wilson
 
 
 class SparseCurriculumTests(unittest.TestCase):
