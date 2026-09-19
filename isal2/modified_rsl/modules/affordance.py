@@ -29,7 +29,9 @@ class AffordanceUNet(nn.Module):
 
 
 class ActorCriticAffordance(ActorCriticAME):
-    def __init__(self, *args, unet_channels=(16, 32, 64), **kwargs):
+    def __init__(self, *args, unet_channels=(16, 32, 64), affordance_initial_alpha=0., **kwargs):
+        if not 0. <= affordance_initial_alpha <= 1.:
+            raise ValueError('affordance_initial_alpha must be between zero and one')
         super().__init__(*args, **kwargs)
         t = self.terrain_attention
         if min(t.map_shape) < 4:
@@ -38,7 +40,7 @@ class ActorCriticAffordance(ActorCriticAME):
         t.position_encoding = PositionEncoding2D(old.projection.in_channels - 2 + 1,
             old.projection.out_channels, t.map_shape, kwargs.get("map_resolution", .1))
         self.affordance_net = AffordanceUNet(unet_channels)
-        self.register_buffer("affordance_alpha", torch.tensor(0.0))
+        self.register_buffer("affordance_alpha", torch.tensor(float(affordance_initial_alpha)))
 
     def affordance_map(self, scan):
         return self.affordance_net(self.terrain_attention.scan_to_image(scan)).sigmoid()

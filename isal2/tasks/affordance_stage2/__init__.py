@@ -1,0 +1,1 @@
+"""Affordance stage 2."""

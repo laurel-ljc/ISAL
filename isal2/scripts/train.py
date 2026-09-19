@@ -89,6 +89,10 @@ def main():
         if args.advance_from and not (sparse and args.validation_report):
             parser.error('--advance-from requires a Sparse task and --validation-report')
         cfg.configure(args.terrain, args.num_envs, args.terrain_rows, args.terrain_cols)
+        affordance_config_checked = args.smoke_steps > 0 and hasattr(cfg, 'course') and hasattr(cfg, 'collection')
+        if affordance_config_checked:
+            from isal2.tests.course_sim_checks import check_affordance_config
+            check_affordance_config(cfg)
         agent.seed, agent.device, agent.max_iterations = args.seed, args.device, args.max_iterations
         if hasattr(agent, "configure_from_env"):
             agent.configure_from_env(cfg)
@@ -96,6 +100,8 @@ def main():
             if argument is not None:
                 if not hasattr(agent, "affordance"):
                     parser.error("Affordance overrides require the Affordance task")
+                if agent.affordance.get('gate_mode') == 'immediate' and argument != 0:
+                    parser.error('Affordance Stage2 enables predictions immediately; warm-up and ramp must be zero')
                 agent.affordance[key] = argument
         run_name = args.run_name or datetime.now().strftime("%Y-%m-%d_%H-%M-%S_%f")
         if Path(run_name).name != run_name or run_name in (".", ".."):
@@ -115,6 +121,8 @@ def main():
         if args.smoke_steps:
             from isal2.tests.sim_checks import smoke_check
             result = smoke_check(env, args.smoke_steps, args.check_reset)
+            if affordance_config_checked:
+                result['affordance_matches_ame'] = True
         else:
             runner_cls = OnPolicyRunner
             if hasattr(agent, "runner_class"):

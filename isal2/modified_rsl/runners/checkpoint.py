@@ -70,11 +70,15 @@ def warm_start(runner, path, std=.30):
         runner.replay.next = 0
         runner.supervised_optimizer.state.clear()
         runner.total_samples = runner.supervised_updates = runner.iteration = 0
-        runner.alg.policy.affordance_alpha.zero_()
+        runner.reset_affordance_gate()
         collector = runner.env.unwrapped.collector
         collector.reset(torch.arange(runner.env.num_envs, device=runner.env.device))
         collector.ready.clear()
         collector.stats = dict.fromkeys(collector.stats, 0)
+    raw = getattr(runner.env, 'unwrapped', None)
+    if raw is not None and hasattr(raw, 'course_state_dict'):
+        raw.course_curriculum.levels.zero_()
+        runner.env.reset()
     return checkpoint.get('infos')
 
 

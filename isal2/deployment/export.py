@@ -60,7 +60,10 @@ def deployment_metadata(env, names, kind, checkpoint, policy_cfg, alpha):
                            or not np.allclose(scan["size"], [(shape[1] - 1) * pcfg_resolution,
                                                              (shape[0] - 1) * pcfg_resolution])):
         raise ValueError("Training scanner geometry disagrees with the policy's metric position encoding")
-    return {"schema_version": 1, "model_type": kind, "task": f"ISAL2-RPO-{kind.capitalize() if kind != 'ame' else 'AME'}-v0",
+    family = kind.capitalize() if kind != 'ame' else 'AME'
+    stage = env.get('course', {}).get('stage')
+    task = f'ISAL2-RPO-{family}-Stage{stage}-v0' if stage in (1, 2) else f'ISAL2-RPO-{family}-v0'
+    return {"schema_version": 1, "model_type": kind, "task": task,
             "checkpoint": str(checkpoint.resolve()), "checkpoint_sha256": hashlib.sha256(checkpoint.read_bytes()).hexdigest(),
             "inputs": {"policy": [None, 390], **({"height_scan": [None, 187]} if kind != "base" else {})},
             "output": {"actions": [None, 23]}, "joint_names": names, "joints": joint,

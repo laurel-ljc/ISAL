@@ -15,6 +15,8 @@ def smoke_check(env, steps, check_reset):
     ame = "height_scan" in obs
     sparse = hasattr(raw.cfg, 'sparse')
     course = hasattr(raw.cfg, 'course')
+    if course:
+        assert not any(name.startswith('isal2.deprecated_tasks') for name in sys.modules), 'Active tasks imported deprecated code'
     drifting = sparse and raw.cfg.sparse.perturbations()['drift'] > 0
     if ame:
         from isaaclab.sensors.ray_caster.patterns import grid_pattern

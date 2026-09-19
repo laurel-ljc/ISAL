@@ -1,8 +1,8 @@
-# ISAL2：RPO AME 两阶段地形任务
+# ISAL2：RPO AME / Affordance 两阶段地形任务
 
-当前默认任务为 `ISAL2-RPO-AME-Stage1-v0`。本次实现 AME 的两个阶段，Affordance 两阶段留待后续实现。旧任务已完整迁移到 `deprecated_tasks`，仍可用原来的任务 ID 显式启动；`scripts/list_envs.py` 会标出 active/deprecated。
+当前默认任务为 `ISAL2-RPO-AME-Stage1-v0`。AME 和 Affordance 各有两个阶段，共四个 active 任务。旧任务已完整迁移到 `deprecated_tasks`，仍可用原来的任务 ID 显式启动；`scripts/list_envs.py` 会标出 active/deprecated。
 
-`tasks` 顶层只有 `ame_stage1`、`ame_stage2` 和 `common`。`common/base` 保存公共环境和 MDP，`common/ame` 保存 AME 感知与策略配置，`common/course` 保存地形、命令和课程；这些公共模块不注册任务。旧任务完整实现只保留在 `deprecated_tasks`。
+`tasks` 顶层为 `ame_stage1`、`ame_stage2`、`affordance_stage1`、`affordance_stage2` 和 `common`。`common/base` 保存公共环境和 MDP，`common/ame` 保存 AME 感知与策略配置，`common/affordance` 保存接触采集和 Affordance 配置，`common/course` 保存地形、命令和课程；公共模块不注册任务。旧任务完整实现只保留在 `deprecated_tasks`。
 
 ## 新任务训练与恢复
 
@@ -17,7 +17,7 @@ python scripts/train.py --task ISAL2-RPO-AME-Stage2-v0 --headless --num_envs 409
 
 Stage2 允许不传 `--warm-start` 从零训练。warm-start 沿用既有语义：严格加载模型和观测归一化统计，动作标准差重置为 0.30，优化器、迭代数及课程重新开始。跨阶段使用 warm-start；resume 只用于相同阶段，要求环境数量、地形列数、seed 与课程配置一致。恢复课程等级和随机数状态后重新开启回合，不恢复物理现场。
 
-新任务保留旧 AME 的 23 维动作、390 维本体历史、1630 维 Critic、187 点高程、网络结构和 PPO 参数；奖励权重与旧 AME 默认 rough 一致。两个阶段 actor/critic 均读取干净的当前高程图：yaw 对齐、1.6×1.0 m、分辨率 0.1 m、11×17；本体观测噪声和动力学随机化仍保留。
+AME 阶段任务保留旧 AME 的网络结构和 PPO 参数；四个阶段任务均保留 23 维动作、390 维本体历史、1630 维 Critic、187 点高程，奖励权重与旧 AME 默认 rough 一致。两个阶段 actor/critic 均读取干净的当前高程图：yaw 对齐、1.6×1.0 m、分辨率 0.1 m、11×17；本体观测噪声和动力学随机化仍保留。
 
 ## 地形与十级课程
 
@@ -51,7 +51,35 @@ python scripts/render_course_catalog.py --output outputs/course_catalog
 
 验收结果见 [VALIDATION_AME_STAGES.md](VALIDATION_AME_STAGES.md)：85项测试通过，两个阶段均完成短程PPO、恢复训练及仿真生命周期检查。
 
-后续 Affordance 阶段复用相同地形和课程，不设迭代 warm-up、渐进输入 gate 或样本数 gate；监督更新只需有足够有效样本。本次没有新增或修改 Affordance 训练行为。
+## Affordance 两阶段训练
+
+`ISAL2-RPO-Affordance-Stage1-v0` 和 `ISAL2-RPO-Affordance-Stage2-v0` 复用对应 AME 阶段的地形、十级课程、机器人、奖励和干净高程图。Stage1 无推扰，Stage2 每5–8秒叠加各水平轴 ±0.10 m/s 的根速度扰动。策略保持旧 Affordance 的 U-Net 与注意力融合结构。
+
+| 设置 | Affordance Stage1 | Affordance Stage2 |
+|---|---|---|
+| 预测接入策略 | 等待500轮，再用1000轮逐渐启用 | 首次推理即完整启用 |
+| 预测接入样本门槛 | 累计有效样本至少256条 | 无 |
+| 初始 alpha | 0，策略接收常数质量图0.5 | 1，策略接收完整预测 |
+| 监督训练门槛 | 回放中至少64条有效样本 | 同左 |
+
+这里的“轮”是 PPO iteration，不是 episode 或控制步。Stage1 的 `alpha=clamp((iteration-500)/1000,0,1)`，累计有效样本不足256条时保持0。**warm-up 不阻止 U-Net 学习**：两阶段都在有效样本达到64条后，每轮PPO结束执行8次监督更新，batch为256、Adam学习率1e-4。回放容量65,536，保留最近32轮的样本。PPO与U-Net优化器隔离，更新顺序为 rollout → PPO → 监督训练。
+
+成功到达和超时都保留已完成0.25秒评价窗的样本、丢弃未完成样本，不把成功标成失败；真实失败仍强制将对应待评价接触标为0。手动和局部reset清理相应环境未完成的接触记录。
+
+```powershell
+python scripts/train.py --task ISAL2-RPO-Affordance-Stage1-v0 --headless --num_envs 4096 --run_name aff_stage1
+python scripts/train.py --task ISAL2-RPO-Affordance-Stage2-v0 --headless --num_envs 4096 --warm-start outputs/rpo_affordance_stage1/aff_stage1/model_12001.pt --run_name aff_stage2
+python scripts/train.py --task ISAL2-RPO-Affordance-Stage2-v0 --headless --num_envs 4096 --resume outputs/rpo_affordance_stage2/aff_stage2/model_12001.pt --run_name aff_stage2_resume
+python scripts/train.py --task ISAL2-RPO-Affordance-Stage1-v0 --headless --num_envs 8 --terrain_cols 7 --smoke_steps 150 --check_reset
+python scripts/train.py --task ISAL2-RPO-Affordance-Stage2-v0 --headless --num_envs 8 --terrain_cols 5 --smoke_steps 150 --check_reset
+python scripts/export_onnx.py --checkpoint outputs/rpo_affordance_stage2/aff_stage2/model_12001.pt
+```
+
+Stage2也允许从零训练。warm-start必须加载Affordance模型：保留模型权重与归一化统计，清空两组优化器、回放、课程及迭代数，将动作标准差设为0.30；目标Stage1重新预热，目标Stage2的alpha立即设为1。AME→Affordance权重转换不受支持。
+
+同阶段resume要求环境数、seed、地形列数、课程及辅助配置一致，恢复两组优化器、回放、采集统计、课程和随机数状态；Stage1继续原调度，Stage2维持alpha=1。Stage1可用 `--affordance_warmup`（非负）、`--affordance_ramp`（正数）覆盖调度；Stage2只接受这两个参数为0。导出保留实际alpha，包含Stage1预热或渐进状态，以及Stage2完整启用状态。
+
+输出分别在 `outputs/rpo_affordance_stage1` 和 `outputs/rpo_affordance_stage2`。验收记录见 [VALIDATION_AFFORDANCE_STAGES.md](VALIDATION_AFFORDANCE_STAGES.md)。
 
 ## Deprecated 任务历史说明
 

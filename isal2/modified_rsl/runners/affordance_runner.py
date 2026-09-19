@@ -12,8 +12,16 @@ class AffordanceRunner(OnPolicyRunner):
             raise ValueError("Affordance replay currently supports single-process training only")
         self.aux_cfg = self.cfg["affordance"]
         c = self.aux_cfg
-        if min(c["batch_size"], c["gradient_steps"], c["min_samples"], c["ramp_iterations"]) < 1 or c["warmup_iterations"] < 0:
+        self.gate_mode = c.get('gate_mode', 'scheduled')
+        if self.gate_mode not in ('scheduled', 'immediate'):
+            raise ValueError('Unknown affordance gate mode')
+        if min(c["batch_size"], c["gradient_steps"], c["min_samples"]) < 1:
             raise ValueError("Invalid supervised batch/update/gate configuration")
+        if self.gate_mode == 'scheduled':
+            if c['ramp_iterations'] < 1 or min(c['warmup_iterations'], c['gate_min_samples']) < 0:
+                raise ValueError('Invalid scheduled affordance gate configuration')
+        elif any(c[key] != 0 for key in ('warmup_iterations', 'ramp_iterations', 'gate_min_samples')):
+            raise ValueError('Immediate affordance mode does not allow warm-up, ramp or sample gates')
         self.replay = AffordanceReplay(env.get_observations()["height_scan"].shape[-1], c["capacity"], c["max_age"], device)
         self.supervised_optimizer = torch.optim.Adam(self.alg.policy.affordance_net.parameters(), lr=c["learning_rate"])
         orange = {id(p) for g in self.alg.optimizer.param_groups for p in g["params"]}
@@ -22,15 +30,23 @@ class AffordanceRunner(OnPolicyRunner):
             raise RuntimeError("PPO and supervised optimizers must be disjoint")
         self.total_samples, self.supervised_updates = 0, 0
         self.iteration = 0
+        self.reset_affordance_gate()
+
+    def reset_affordance_gate(self):
+        """Initialize the target task gate, also after a model-only warm start."""
+        self.alg.policy.affordance_alpha.fill_(1. if self.gate_mode == 'immediate' else 0.)
 
     def _start_iteration(self, iteration):
         self.iteration = iteration
         self.env.unwrapped.set_collection_iteration(iteration)
         self.replay.expire(iteration)
         c = self.aux_cfg
-        alpha = min(1., max(0., (iteration - c["warmup_iterations"]) / c["ramp_iterations"]))
-        if self.total_samples < c["gate_min_samples"]:
-            alpha = 0.
+        if self.gate_mode == 'immediate':
+            alpha = 1.
+        else:
+            alpha = min(1., max(0., (iteration - c["warmup_iterations"]) / c["ramp_iterations"]))
+            if self.total_samples < c["gate_min_samples"]:
+                alpha = 0.
         self.alg.policy.affordance_alpha.fill_(alpha)
 
     def _after_env_step(self):
@@ -110,6 +126,8 @@ class AffordanceRunner(OnPolicyRunner):
         state = checkpoint.get("affordance_state")
         if state is None or state["config"] != self.aux_cfg:
             raise ValueError("Affordance resume requires matching supervised/replay/gate configuration")
+        if self.gate_mode == 'immediate' and float(checkpoint['model_state_dict']['affordance_alpha']) != 1.:
+            raise ValueError('Immediate Affordance checkpoint must have alpha=1')
         infos = super().load(path, load_optimizer, map_location)
         if load_optimizer:
             self.supervised_optimizer.load_state_dict(state["optimizer"])

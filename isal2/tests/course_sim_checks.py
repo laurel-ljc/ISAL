@@ -6,6 +6,7 @@ from isal2.tasks.common.course.commands import push_base_horizontal
 def check_course(env):
     raw = env.unwrapped
     n, device = env.num_envs, env.device
+    affordance = hasattr(raw, 'collector')
     assert raw.cfg.noise.add_noise  # Preserve proprioception noise.
     assert raw.cfg.noise.noise_scales.height_scan == 0
     assert raw.cfg.scene.height_scanner.drift_range == (0., 0.)
@@ -52,6 +53,9 @@ def check_course(env):
             assert not extras['time_outs'][idx]
             assert raw.course_curriculum.levels[idx, kind] == min(old_level+1, 9)
             assert not raw.course_result['failed'][idx]
+            if affordance:
+                assert not raw.collector.active[:2].any()
+                assert not raw.collector.swing[:2].any()
             reached = True
             break
     assert reached, 'Robot never reached successful terminal state on finish platform'
@@ -68,3 +72,17 @@ def check_course(env):
     env.reset()
     return dict(success_terminal=True, timeout_bootstrap=True, independent_type_levels=True,
                 clean_actor_and_critic=True, additive_push_checked=raw.cfg.course.stage == 2)
+
+
+def check_affordance_config(cfg):
+    """Compare resolved configs before scene creation mutates importer/asset settings."""
+    from isal2.tasks.ame_stage1.env_cfg import RPOAMEStage1EnvCfg
+    from isal2.tasks.ame_stage2.env_cfg import RPOAMEStage2EnvCfg
+    reference = (RPOAMEStage1EnvCfg if cfg.course.stage == 1 else RPOAMEStage2EnvCfg)()
+    reference.seed = cfg.seed
+    reference.sim.device = cfg.sim.device
+    reference.sim.log_dir = cfg.sim.log_dir
+    reference.configure(num_envs=cfg.scene_context.num_envs, terrain_cols=cfg.scene_context.terrain_generator.num_cols)
+    expected, actual = reference.to_dict(), cfg.to_dict()
+    for key in ('robot', 'reward', 'sim', 'noise', 'normalization', 'commands', 'scene_context', 'scene', 'events', 'course'):
+        assert expected[key] == actual[key], f'Affordance changed AME {key} configuration'

@@ -20,6 +20,8 @@ class CourseCfg:
 
 
 class CourseConfigMixin:
+    course_family: str = 'ame'
+
     def configure(self, terrain=None, num_envs=None, terrain_rows=None, terrain_cols=None):
         if terrain is not None and terrain != self.terrain_preset:
             raise ValueError(f'This stage requires terrain {self.terrain_preset}')
@@ -32,7 +34,7 @@ class CourseConfigMixin:
         cols = len(kinds)*2 if cols is None else cols
         if cols < len(kinds) or cols % len(kinds):
             raise ValueError(f'terrain_cols must be a positive multiple of {len(kinds)}')
-        if self.terrain_preset != f'ame_stage{self.course.stage}':
+        if self.course_family not in ('ame', 'affordance') or self.terrain_preset != f'{self.course_family}_stage{self.course.stage}':
             raise ValueError('Task and terrain stage do not match')
         self.scene_context.terrain_type = 'generator'
         self.scene_context.terrain_generator = CourseGeneratorCfg(stage=self.course.stage,
