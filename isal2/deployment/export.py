@@ -3,13 +3,36 @@ from copy import deepcopy
 import hashlib
 import json
 from pathlib import Path
+import pickle
 import re
+import types
 
 import numpy as np
 import torch
 from torch import nn
 from torch.nn import functional as F
 import yaml
+
+
+class _CheckpointUnpickler(pickle.Unpickler):
+    """Read NumPy 2 array pickles on older NumPy 1.x installations."""
+
+    def find_class(self, module, name):
+        try:
+            return super().find_class(module, name)
+        except ModuleNotFoundError as exc:
+            if module.startswith("numpy._core.") and exc.name in ("numpy._core", module):
+                return super().find_class(module.replace("numpy._core.", "numpy.core.", 1), name)
+            raise
+
+
+def _load_checkpoint(checkpoint):
+    # Keep compatibility local to this trusted checkpoint load, without changing
+    # NumPy imports process-wide or modifying the installed Isaac Lab environment.
+    compat_pickle = types.ModuleType("checkpoint_pickle")
+    compat_pickle.__dict__.update(vars(pickle))
+    compat_pickle.Unpickler = _CheckpointUnpickler
+    return torch.load(checkpoint, map_location="cpu", weights_only=False, pickle_module=compat_pickle)
 
 
 class TrainingLoader(yaml.SafeLoader):
@@ -120,7 +143,7 @@ def load_actor(checkpoint, env_path=None, joints_path=None, agent_path=None):
     from rsl_rl.modules import ActorCritic
     from isal2.modified_rsl.modules import ActorCriticAME, ActorCriticAffordance
     checkpoint = Path(checkpoint)
-    state = torch.load(checkpoint, map_location="cpu", weights_only=False)
+    state = _load_checkpoint(checkpoint)
     env = yaml.load(Path(env_path or checkpoint.parent / "env.yaml").read_text(encoding="utf-8"), Loader=TrainingLoader)
     names = json.loads(Path(joints_path or checkpoint.parent / "joint_names.json").read_text(encoding="utf-8"))
     cfg = (yaml.load(Path(agent_path).read_text(encoding="utf-8"), Loader=TrainingLoader)
