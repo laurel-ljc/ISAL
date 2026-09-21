@@ -35,6 +35,7 @@ def main():
     parser.add_argument("--replay-probability", type=float)
     parser.add_argument("--skip-evaluation", action='store_true', help="Debug only: no validation or curriculum unlocking")
     parser.add_argument("--run_name", default=None)
+    parser.add_argument("--save_interval", type=int, help="Checkpoint interval in completed PPO updates")
     parser.add_argument("--terrain_rows", type=int)
     parser.add_argument("--terrain_cols", type=int)
     parser.add_argument("--smoke_steps", type=int, default=0, help="Validate environment instead of training")
@@ -57,6 +58,7 @@ def main():
     env = None
     try:
         import torch
+        from isal2.utils.checkpoint import load_checkpoint
         import warp as wp
         import gymnasium as gym
         from isaaclab.utils.io import dump_yaml
@@ -75,7 +77,7 @@ def main():
         if sparse:
             # Resume/advance inherit source settings unless explicitly overridden.
             if args.resume or args.advance_from:
-                saved = torch.load(args.resume or args.advance_from, map_location='cpu', weights_only=False)
+                saved = load_checkpoint(args.resume or args.advance_from, map_location='cpu')
                 if 'sparse_state' not in saved:
                     parser.error('Legacy checkpoints must use --warm-start')
                 for key, value in saved['sparse_state']['signature'].items():
@@ -94,6 +96,10 @@ def main():
             from isal2.tests.course_sim_checks import check_affordance_config
             check_affordance_config(cfg)
         agent.seed, agent.device, agent.max_iterations = args.seed, args.device, args.max_iterations
+        if args.save_interval is not None:
+            if args.save_interval < 1:
+                parser.error('save_interval must be positive')
+            agent.save_interval = args.save_interval
         if hasattr(agent, "configure_from_env"):
             agent.configure_from_env(cfg)
         for argument, key in ((args.affordance_warmup, "warmup_iterations"), (args.affordance_ramp, "ramp_iterations")):
@@ -118,6 +124,9 @@ def main():
         if hasattr(cfg, 'course'):
             (log_dir / 'terrain_atlas.json').write_text(
                 json.dumps(env.unwrapped.scene.terrain.course_atlas, indent=2), encoding='utf-8')
+        if hasattr(cfg, 'reference'):
+            (log_dir / 'terrain_atlas.json').write_text(
+                json.dumps(env.unwrapped.scene.terrain.reference_atlas, indent=2), encoding='utf-8')
         if args.smoke_steps:
             from isal2.tests.sim_checks import smoke_check
             result = smoke_check(env, args.smoke_steps, args.check_reset)

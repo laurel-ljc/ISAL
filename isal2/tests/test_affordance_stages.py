@@ -8,12 +8,12 @@ from uuid import uuid4
 
 import torch
 from isal2.tests import test_affordance as legacy
-from isal2.tasks.common.affordance.collection import ContactCollector
-from isal2.tasks.common.course.curriculum import CourseCurriculum
-from isal2.tasks.common.course.geometry import STAGES
-from isal2.tasks.common.course.runtime import CourseTaskMixin
-from isal2.tasks.affordance_stage1.agents.ppo_cfg import AffordanceStage1AgentCfg
-from isal2.tasks.affordance_stage2.agents.ppo_cfg import AffordanceStage2AgentCfg
+from isal2.deprecated_tasks.endpoint_course.common.affordance.collection import ContactCollector
+from isal2.deprecated_tasks.endpoint_course.common.course.curriculum import CourseCurriculum
+from isal2.deprecated_tasks.endpoint_course.common.course.geometry import STAGES
+from isal2.deprecated_tasks.endpoint_course.common.course.runtime import CourseTaskMixin
+from isal2.deprecated_tasks.endpoint_course.affordance_stage1.agents.ppo_cfg import AffordanceStage1AgentCfg
+from isal2.deprecated_tasks.endpoint_course.affordance_stage2.agents.ppo_cfg import AffordanceStage2AgentCfg
 from isal2.modified_rsl.modules.affordance import ActorCriticAffordance
 from isal2.modified_rsl.runners.affordance_runner import AffordanceRunner
 from isal2.modified_rsl.runners.checkpoint import warm_start, model_digest
@@ -236,7 +236,7 @@ class StageLearningTests(unittest.TestCase):
 
     def test_ame_checkpoint_is_rejected(self):
         from isal2.modified_rsl.modules import ActorCriticAME
-        from isal2.tasks.ame_stage1.agents.ppo_cfg import AMEStage1AgentCfg
+        from isal2.deprecated_tasks.endpoint_course.ame_stage1.agents.ppo_cfg import AMEStage1AgentCfg
         cfg = AMEStage1AgentCfg()
         policy = dict(cfg.policy)
         policy.pop('class_name')

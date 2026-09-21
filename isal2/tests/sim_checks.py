@@ -15,7 +15,7 @@ def smoke_check(env, steps, check_reset):
     ame = "height_scan" in obs
     sparse = hasattr(raw.cfg, 'sparse')
     course = hasattr(raw.cfg, 'course')
-    if course:
+    if hasattr(raw.cfg, 'reference'):
         assert not any(name.startswith('isal2.deprecated_tasks') for name in sys.modules), 'Active tasks imported deprecated code'
     drifting = sparse and raw.cfg.sparse.perturbations()['drift'] > 0
     if ame:
@@ -114,6 +114,9 @@ def smoke_check(env, steps, check_reset):
                 assert torch.equal(untouched_scan, raw.obs_buf["height_scan"][1:]), "Partial reset resampled other scans"
     reference_rays = 0
     course_checks = {}
+    if hasattr(raw.cfg, 'reference') and check_reset:
+        from isal2.tests.reference_sim_checks import check_reference
+        course_checks = check_reference(env)
     if course and check_reset:
         from isal2.tests.course_sim_checks import check_course
         course_checks = check_course(env)

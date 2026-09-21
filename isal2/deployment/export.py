@@ -3,9 +3,7 @@ from copy import deepcopy
 import hashlib
 import json
 from pathlib import Path
-import pickle
 import re
-import types
 
 import numpy as np
 import torch
@@ -13,26 +11,7 @@ from torch import nn
 from torch.nn import functional as F
 import yaml
 
-
-class _CheckpointUnpickler(pickle.Unpickler):
-    """Read NumPy 2 array pickles on older NumPy 1.x installations."""
-
-    def find_class(self, module, name):
-        try:
-            return super().find_class(module, name)
-        except ModuleNotFoundError as exc:
-            if module.startswith("numpy._core.") and exc.name in ("numpy._core", module):
-                return super().find_class(module.replace("numpy._core.", "numpy.core.", 1), name)
-            raise
-
-
-def _load_checkpoint(checkpoint):
-    # Keep compatibility local to this trusted checkpoint load, without changing
-    # NumPy imports process-wide or modifying the installed Isaac Lab environment.
-    compat_pickle = types.ModuleType("checkpoint_pickle")
-    compat_pickle.__dict__.update(vars(pickle))
-    compat_pickle.Unpickler = _CheckpointUnpickler
-    return torch.load(checkpoint, map_location="cpu", weights_only=False, pickle_module=compat_pickle)
+from isal2.utils.checkpoint import load_checkpoint
 
 
 class TrainingLoader(yaml.SafeLoader):
@@ -84,8 +63,9 @@ def deployment_metadata(env, names, kind, checkpoint, policy_cfg, alpha):
                                                              (shape[0] - 1) * pcfg_resolution])):
         raise ValueError("Training scanner geometry disagrees with the policy's metric position encoding")
     family = kind.capitalize() if kind != 'ame' else 'AME'
-    stage = env.get('course', {}).get('stage')
-    task = f'ISAL2-RPO-{family}-Stage{stage}-v0' if stage in (1, 2) else f'ISAL2-RPO-{family}-v0'
+    stage = env.get('reference', env.get('course', {})).get('stage')
+    suffix = 'Endpoint-' if 'course' in env else ''
+    task = f'ISAL2-RPO-{family}-{suffix}Stage{stage}-v0' if stage in (1, 2) else f'ISAL2-RPO-{family}-v0'
     return {"schema_version": 1, "model_type": kind, "task": task,
             "checkpoint": str(checkpoint.resolve()), "checkpoint_sha256": hashlib.sha256(checkpoint.read_bytes()).hexdigest(),
             "inputs": {"policy": [None, 390], **({"height_scan": [None, 187]} if kind != "base" else {})},
@@ -96,6 +76,9 @@ def deployment_metadata(env, names, kind, checkpoint, policy_cfg, alpha):
             "clip_observations": norm["clip_observations"], "clip_actions": norm["clip_actions"],
             "action_scale": rcfg["action_scale"], "control_dt": env["sim"]["dt"] * env["decimation"],
             "command_ranges": {key: env["commands"]["ranges"][key] for key in ("lin_vel_x", "lin_vel_y", "ang_vel_z")},
+            "command_generator": {key: env['commands'][key] for key in ('resampling_time_range', 'heading_command', 'heading_control_stiffness', 'rel_standing_envs')},
+            "heading_range": env['commands']['ranges']['heading'],
+            "curriculum": env.get('reference', env.get('course')),
             "height_scan": {"shape": shape, "ordering": "xy", "resolution": scan["resolution"],
                             "size": scan["size"], "ray_offset": scan["offset"],
                             "height_offset": norm["height_scan_offset"], "clip": [-1, 1], "miss_value": 1},
@@ -143,7 +126,7 @@ def load_actor(checkpoint, env_path=None, joints_path=None, agent_path=None):
     from rsl_rl.modules import ActorCritic
     from isal2.modified_rsl.modules import ActorCriticAME, ActorCriticAffordance
     checkpoint = Path(checkpoint)
-    state = _load_checkpoint(checkpoint)
+    state = load_checkpoint(checkpoint)
     env = yaml.load(Path(env_path or checkpoint.parent / "env.yaml").read_text(encoding="utf-8"), Loader=TrainingLoader)
     names = json.loads(Path(joints_path or checkpoint.parent / "joint_names.json").read_text(encoding="utf-8"))
     cfg = (yaml.load(Path(agent_path).read_text(encoding="utf-8"), Loader=TrainingLoader)
@@ -166,6 +149,8 @@ def load_actor(checkpoint, env_path=None, joints_path=None, agent_path=None):
     model.load_state_dict(state["model_state_dict"], strict=True)
     metadata = deployment_metadata(env, names, kind, checkpoint, pcfg,
                                    float(model.affordance_alpha) if kind == "affordance" else None)
+    if 'reference_state' in state:
+        metadata['curriculum'] = state['reference_state']['signature']
     return model, metadata
 
 

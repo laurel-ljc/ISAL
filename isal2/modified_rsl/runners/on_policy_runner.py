@@ -6,6 +6,7 @@ from pathlib import Path
 import time
 
 import torch
+from isal2.utils.checkpoint import load_checkpoint
 from rsl_rl.runners import OnPolicyRunner as RslOnPolicyRunner
 from rsl_rl.utils.logger import Logger
 
@@ -116,15 +117,30 @@ class OnPolicyRunner(RslOnPolicyRunner):
 
     def load(self, path, load_optimizer=True, map_location=None):
         # Preserve compatibility with existing ISAL2 state-dict checkpoints.
-        checkpoint = torch.load(path, map_location=map_location or self.device, weights_only=False)
+        checkpoint = load_checkpoint(path, map_location=map_location or self.device)
         raw = getattr(self.env, 'unwrapped', None)
+        if raw is not None and hasattr(raw, 'reference_state_dict'):
+            if 'reference_state' not in checkpoint:
+                raise ValueError('Endpoint/legacy checkpoints cannot resume the reference curriculum; use --warm-start for AME weights only')
+            raw.validate_reference_state(checkpoint['reference_state'])
         if raw is not None and hasattr(raw, 'course_state_dict'):
             if 'course_state' not in checkpoint:
                 raise ValueError('Old checkpoints require --warm-start for a stage task')
             raw.validate_course_state(checkpoint['course_state'])
         if raw is not None and hasattr(raw, 'sparse_state_dict') and 'sparse_state' not in checkpoint:
             raise ValueError('Old checkpoints require --warm-start for a sparse task')
-        infos = super().load(path, load_optimizer=load_optimizer, map_location=map_location)
+        # Match upstream restore semantics using the already decoded checkpoint.
+        # Calling super().load would deserialize again without NumPy compatibility.
+        resumed_training = self.alg.policy.load_state_dict(checkpoint["model_state_dict"])
+        if self.alg_cfg["rnd_cfg"]:
+            self.alg.rnd.load_state_dict(checkpoint["rnd_state_dict"])
+        if load_optimizer and resumed_training:
+            self.alg.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+            if self.alg_cfg["rnd_cfg"]:
+                self.alg.rnd_optimizer.load_state_dict(checkpoint["rnd_optimizer_state_dict"])
+        if resumed_training:
+            self.current_learning_iteration = checkpoint["iter"]
+        infos = checkpoint["infos"]
         if load_optimizer:
             self.alg.learning_rate = self.alg.optimizer.param_groups[0]["lr"]
         from .checkpoint import restore_sparse

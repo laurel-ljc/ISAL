@@ -1,6 +1,6 @@
 """Additional live course lifecycle checks, used by --smoke_steps --check_reset."""
 import torch
-from isal2.tasks.common.course.commands import push_base_horizontal
+from isal2.deprecated_tasks.endpoint_course.common.course.commands import push_base_horizontal
 
 
 def check_course(env):
@@ -76,8 +76,8 @@ def check_course(env):
 
 def check_affordance_config(cfg):
     """Compare resolved configs before scene creation mutates importer/asset settings."""
-    from isal2.tasks.ame_stage1.env_cfg import RPOAMEStage1EnvCfg
-    from isal2.tasks.ame_stage2.env_cfg import RPOAMEStage2EnvCfg
+    from isal2.deprecated_tasks.endpoint_course.ame_stage1.env_cfg import RPOAMEStage1EnvCfg
+    from isal2.deprecated_tasks.endpoint_course.ame_stage2.env_cfg import RPOAMEStage2EnvCfg
     reference = (RPOAMEStage1EnvCfg if cfg.course.stage == 1 else RPOAMEStage2EnvCfg)()
     reference.seed = cfg.seed
     reference.sim.device = cfg.sim.device

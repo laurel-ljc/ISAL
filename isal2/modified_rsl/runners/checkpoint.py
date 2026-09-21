@@ -3,6 +3,7 @@ import hashlib
 import random
 import numpy as np
 import torch
+from isal2.utils.checkpoint import load_checkpoint
 
 
 def rng_state():
@@ -28,6 +29,8 @@ def model_digest(state):
 
 def extra_state(runner):
     raw = getattr(runner.env, 'unwrapped', None)
+    if raw is not None and hasattr(raw, 'reference_state_dict'):
+        return dict(reference_state=raw.reference_state_dict(), rng_state=rng_state())
     if raw is not None and hasattr(raw, 'course_state_dict'):
         return dict(course_state=raw.course_state_dict(), rng_state=rng_state())
     if raw is None or not hasattr(raw, 'sparse_state_dict'):
@@ -37,6 +40,11 @@ def extra_state(runner):
 
 def restore_sparse(runner, checkpoint):
     raw = getattr(runner.env, 'unwrapped', None)
+    if raw is not None and hasattr(raw, 'reference_state_dict'):
+        raw.load_reference_state_dict(checkpoint['reference_state'])
+        restore_rng(checkpoint['rng_state'])
+        runner.env.reset()
+        return
     if raw is not None and hasattr(raw, 'course_state_dict'):
         raw.load_course_state_dict(checkpoint['course_state'])
         restore_rng(checkpoint['rng_state'])
@@ -52,7 +60,7 @@ def restore_sparse(runner, checkpoint):
 
 
 def warm_start(runner, path, std=.30):
-    checkpoint = torch.load(path, map_location=runner.device, weights_only=False)
+    checkpoint = load_checkpoint(path, map_location=runner.device)
     runner.alg.policy.load_state_dict(checkpoint['model_state_dict'], strict=True)
     runner.alg.optimizer.state.clear()
     runner.alg.learning_rate = runner.cfg['algorithm']['learning_rate']
@@ -76,7 +84,10 @@ def warm_start(runner, path, std=.30):
         collector.ready.clear()
         collector.stats = dict.fromkeys(collector.stats, 0)
     raw = getattr(runner.env, 'unwrapped', None)
-    if raw is not None and hasattr(raw, 'course_state_dict'):
+    if raw is not None and hasattr(raw, 'reset_reference_curriculum'):
+        raw.reset_reference_curriculum()
+        runner.env.reset()
+    elif raw is not None and hasattr(raw, 'course_state_dict'):
         raw.course_curriculum.levels.zero_()
         runner.env.reset()
     return checkpoint.get('infos')
@@ -84,7 +95,7 @@ def warm_start(runner, path, std=.30):
 
 def advance(runner, path, report):
     from isal2.deprecated_tasks.sparse.evaluation import check_advance
-    checkpoint = torch.load(path, map_location=runner.device, weights_only=False)
+    checkpoint = load_checkpoint(path, map_location=runner.device)
     raw = runner.env.unwrapped
     check_advance(checkpoint, raw.cfg.sparse.signature(), report, raw.cfg.terrain_preset)
     runner.alg.policy.load_state_dict(checkpoint['model_state_dict'], strict=True)

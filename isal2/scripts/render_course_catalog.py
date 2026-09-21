@@ -17,7 +17,7 @@ def main():
     matplotlib.use('Agg')
     import matplotlib.pyplot as plt
     import numpy as np
-    from isal2.tasks.common.course.geometry import STAGES, build_tile, validate_perception
+    from isal2.deprecated_tasks.endpoint_course.common.course.geometry import STAGES, build_tile, validate_perception
     args.output.mkdir(parents=True, exist_ok=True)
     atlas = []
     for stage, kinds in STAGES.items():

@@ -10,10 +10,10 @@ import numpy as np
 import torch
 import trimesh
 
-from isal2.tasks.common.course.geometry import STAGES, build_tile, validate_perception
-from isal2.tasks.common.course.curriculum import CourseCurriculum
-from isal2.tasks.common.course.commands import endpoint_velocity, push_base_horizontal
-from isal2.tasks.common.course.outcomes import OutcomeTracker, polygon_planes, supported, failure_penalty
+from isal2.deprecated_tasks.endpoint_course.common.course.geometry import STAGES, build_tile, validate_perception
+from isal2.deprecated_tasks.endpoint_course.common.course.curriculum import CourseCurriculum
+from isal2.deprecated_tasks.endpoint_course.common.course.commands import endpoint_velocity, push_base_horizontal
+from isal2.deprecated_tasks.endpoint_course.common.course.outcomes import OutcomeTracker, polygon_planes, supported, failure_penalty
 
 
 class CourseGeometryTests(unittest.TestCase):
@@ -167,8 +167,8 @@ class CourseBehaviorTests(unittest.TestCase):
 
     def test_stage_policy_matches_legacy_architecture(self):
         from isal2.deprecated_tasks.ame.agents.ppo_cfg import AMEAgentCfg
-        from isal2.tasks.ame_stage1.agents.ppo_cfg import AMEStage1AgentCfg
-        from isal2.tasks.ame_stage2.agents.ppo_cfg import AMEStage2AgentCfg
+        from isal2.deprecated_tasks.endpoint_course.ame_stage1.agents.ppo_cfg import AMEStage1AgentCfg
+        from isal2.deprecated_tasks.endpoint_course.ame_stage2.agents.ppo_cfg import AMEStage2AgentCfg
         old = AMEAgentCfg()
         for cfg in (AMEStage1AgentCfg(), AMEStage2AgentCfg()):
             self.assertEqual(old.policy, cfg.policy)
@@ -179,8 +179,8 @@ class CourseBehaviorTests(unittest.TestCase):
 class CourseCheckpointTests(unittest.TestCase):
     def test_real_runner_resume_and_stage_transfer(self):
         from tensordict import TensorDict
-        from isal2.tasks.common.course.runtime import CourseTaskMixin
-        from isal2.tasks.ame_stage1.agents.ppo_cfg import AMEStage1AgentCfg
+        from isal2.deprecated_tasks.endpoint_course.common.course.runtime import CourseTaskMixin
+        from isal2.deprecated_tasks.endpoint_course.ame_stage1.agents.ppo_cfg import AMEStage1AgentCfg
         from isal2.modified_rsl.runners import OnPolicyRunner
         from isal2.modified_rsl.runners.checkpoint import warm_start, model_digest
 

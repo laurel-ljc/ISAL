@@ -1,6 +1,6 @@
 from isaaclab.utils import configclass
-from isal2.tasks.common.affordance.affordance_env_cfg import RPOAffordanceEnvCfg
-from isal2.tasks.common.course.config import CourseCfg, CourseConfigMixin
+from isal2.deprecated_tasks.endpoint_course.common.affordance.affordance_env_cfg import RPOAffordanceEnvCfg
+from isal2.deprecated_tasks.endpoint_course.common.course.config import CourseCfg, CourseConfigMixin
 
 
 @configclass

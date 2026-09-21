@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from isal2.tasks.common.affordance.agents.ppo_cfg import AffordanceAgentCfg
+from isal2.deprecated_tasks.endpoint_course.common.affordance.agents.ppo_cfg import AffordanceAgentCfg
 
 
 @dataclass

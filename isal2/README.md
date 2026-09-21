@@ -1,85 +1,63 @@
-# ISAL2：RPO AME / Affordance 两阶段地形任务
+# ISAL2：AME 参考课程
 
-当前默认任务为 `ISAL2-RPO-AME-Stage1-v0`。AME 和 Affordance 各有两个阶段，共四个 active 任务。旧任务已完整迁移到 `deprecated_tasks`，仍可用原来的任务 ID 显式启动；`scripts/list_envs.py` 会标出 active/deprecated。
+当前仅有两个 active 任务：`ISAL2-RPO-AME-Stage1-v0`（默认）和 `ISAL2-RPO-AME-Stage2-v0`。`tasks` 顶层只有 `ame_stage1`、`ame_stage2`、`common`；公共迁移代码位于 `tasks/common/reference`，不依赖 deprecated 包。
 
-`tasks` 顶层为 `ame_stage1`、`ame_stage2`、`affordance_stage1`、`affordance_stage2` 和 `common`。`common/base` 保存公共环境和 MDP，`common/ame` 保存 AME 感知与策略配置，`common/affordance` 保存接触采集和 Affordance 配置，`common/course` 保存地形、命令和课程；公共模块不注册任务。旧任务完整实现只保留在 `deprecated_tasks`。
+旧四个终点任务已归档到 `deprecated_tasks/endpoint_course`，用 `ISAL2-RPO-{AME|Affordance}-Endpoint-Stage{1|2}-v0` 显式启动。其他 deprecated ID 不变；本次不注册新的 Affordance 阶段任务。历史检查点、下载模型及诊断记录保留。
 
-## 新任务训练与恢复
+## 课程与保留项
 
-以下命令在 `isal2` 目录、已配置的 `env_isaaclab` 环境中执行：
+固定来源为 AME_Locomotion commit `1d3519ee946c846c1c89dd660539a224f99972b5`。原始路径、许可证情况及种子适配见 [SOURCE.md](tasks/common/reference/SOURCE.md)。运行不需要下载参考仓库。
+
+| 阶段 | 地形比例 |
+|---|---|
+| Stage1 | 上台阶、下台阶、方块、粗糙、上坡、下坡各10%；踏石、同心沟槽各20% |
+| Stage2 | 上台阶、下台阶、双列踏桩各10%；两组交替踏桩各20%；同心沟槽、石桥、rails各10% |
+
+默认地图为8×8米地块、10行×20列、外围50米边界。碰撞高度场分辨率为0.05米/0.005米；每行实际难度为 `(row + U[0,1))/10`。中央平台与原点来自参考地形，保留0.20米踏桩、0.60米沟槽等原始参数及取整方式，无起终点路线和防绕行边界。
+
+Stage1在原点附近随机x/y±0.5米、yaw±3.14；Stage2无位置或朝向偏移。根速度清零、关节初始化随机化保留。标准速度命令每10秒重采样：vx为0–1.5 m/s、vy为0；heading增益0.5，角速度限幅±1 rad/s。Stage1目标heading为±π，Stage2为0，不另采样站立回合。
+
+环境地形列固定，初始等级随机0–5。仅自动结束回合时，水平位移>4米升一级；否则位移<当前平移命令模长×20秒×0.5降一级，其余不变。等级最低0，超过9时随机回落0–9。手动reset不计级，局部reset只影响指定环境。保留基础身体接触/姿态失败和20秒超时；失败不bootstrap，纯超时用终止前观测bootstrap。没有终点成功、到达奖励或停滞惩罚。
+
+保留RPO机器人、奖励函数及权重、网络、PPO、本体噪声和动力学随机化。Actor/critic均使用当前干净高程：11×17点、1.6×1.0米、0.1米分辨率，无漂移和感知退化。Stage1无推扰；Stage2每5–8秒叠加水平速度增量，x/y各±0.10 m/s，不改竖直与角速度。动作23维、本体历史390维、critic 1630维不变。
+
+**实验范围**：此次保留了原奖励可能偏好保守行为的风险；策略扫描0.1米与参考地形0.05米碰撞网格不同，窄踏桩与宽沟槽可能感知不足。迁移实现通过不代表训练收敛，不宣称完整复现参考仓库效果。
+
+## 训练、接续和恢复
+
+以下命令在 `isal2` 目录、已配置Isaac Lab的Python环境中运行：
 
 ```powershell
 python scripts/list_envs.py
-python scripts/train.py --task ISAL2-RPO-AME-Stage1-v0 --headless --num_envs 4096 --run_name stage1
-python scripts/train.py --task ISAL2-RPO-AME-Stage2-v0 --headless --num_envs 4096 --warm-start outputs/rpo_ame_stage1/stage1/model_12001.pt --run_name stage2
-python scripts/train.py --task ISAL2-RPO-AME-Stage2-v0 --headless --num_envs 4096 --resume outputs/rpo_ame_stage2/stage2/model_12001.pt --run_name stage2_resume
+python scripts/list_envs.py --including_deprecated true
+python scripts/train.py --headless --num_envs 4096 --run_name reference_stage1
+python scripts/train.py --task ISAL2-RPO-AME-Stage2-v0 --headless --num_envs 4096 --warm-start outputs/rpo_ame_stage1/reference_stage1/model_12001.pt --run_name reference_stage2
+python scripts/train.py --task ISAL2-RPO-AME-Stage2-v0 --headless --num_envs 4096 --resume outputs/rpo_ame_stage2/reference_stage2/model_12001.pt --run_name reference_stage2_resume
 ```
 
-Stage2 允许不传 `--warm-start` 从零训练。warm-start 沿用既有语义：严格加载模型和观测归一化统计，动作标准差重置为 0.30，优化器、迭代数及课程重新开始。跨阶段使用 warm-start；resume 只用于相同阶段，要求环境数量、地形列数、seed 与课程配置一致。恢复课程等级和随机数状态后重新开启回合，不恢复物理现场。
+Stage1默认从零训练，不自动加载下载模型；Stage2也允许不传warm-start从零训练。warm-start严格加载同架构AME模型及归一化统计，重置优化器、迭代数、动作标准差为0.30，课程重新初始化0–5。resume要求阶段、地图/命令/来源配置签名、seed及环境数匹配，恢复等级、地形列、优化器和随机数状态后开启新回合，不恢复物理现场。旧终点检查点不能resume到新任务；明确选择warm-start才可仅迁移AME权重，不支持AME/Affordance跨架构转换。
 
-AME 阶段任务保留旧 AME 的网络结构和 PPO 参数；四个阶段任务均保留 23 维动作、390 维本体历史、1630 维 Critic、187 点高程，奖励权重与旧 AME 默认 rough 一致。两个阶段 actor/critic 均读取干净的当前高程图：yaw 对齐、1.6×1.0 m、分辨率 0.1 m、11×17；本体观测噪声和动力学随机化仍保留。
+`--max_iterations`为本次新增轮数；`--save_interval`控制按完成轮数保存。默认地图20列，调试可用10列；10行固定。训练目录仍为 `outputs/rpo_ame_stage1` / `rpo_ame_stage2`；`terrain_atlas.json`记录实际地形难度与参数，日志记录各地形等级、距离、失败、超时、回合时长及实际命令/速度。
 
-## 地形与十级课程
-
-| 阶段 | 地形 |
-|---|---|
-| Stage1 | stairs、pits、rough、pallets、gaps、grid stones、beams |
-| Stage2 | pentagon stones、single-column stones、narrow pallets、consecutive gaps、narrow stairs |
-
-地块为 8×8 m，障碍区约 4 m；起点 x=-2.7 m，终点 x=2.7 m，两端都有平坦安全平台。pits 为可走入走出的浅坑；narrow pallets 缩窄横向宽度，narrow stairs 缩短前后踏面。五边形为真实正五边形支撑。所有悬空间隙下方为 -1 m 坑底，不是隐藏的平路；浅坑的坑底则是合法落脚区域。
-
-每个环境分别记录每种地形的等级，初始全为第1级（内部 0）。每回合等概率随机地形类型，再从该类型的对应等级地块出生。自动结束时，成功升一级，失败或超时降一级，范围固定为1–10级；手动 reset 不计成绩。没有验证解锁、连续成功门槛或课程回放。
-
-命令每步指向终点，巡航速度每回合采样 0.3–0.6 m/s，接近终点减速。根位置进入终点 0.3 m 范围、至少一脚支撑在终点平台并持续 0.2 s 时成功。失败条件包括旧终止条件、无效支撑、跌落和离开路线；成功与失败同帧时失败优先。成功是无 bootstrap 的真实终止，但不施加 -200 失败惩罚。20 s 超时降级，同时保留终止前 Critic bootstrap。
-
-Stage1 无 base 推扰；Stage2 每5–8秒给根水平速度叠加各轴 ±0.10 m/s 的增量，不修改竖直或角速度。两阶段保持其他随机化一致。
-
-默认 Stage1 为10行×14列，Stage2 为10行×10列，每种类型各两列。行数固定为10；`--terrain_cols` 必须分别为7或5的正整数倍。任务限定自己的 stage 地形，不接受 `--terrain rough` 等旧预设。几何参数位于 `tasks/common/course/geometry.py`，任务配置、命令和生命周期逻辑位于同目录，其余 MDP 沿用 `tasks/common/base/mdp`。任务入口分别为 `tasks/ame_stage1`、`tasks/ame_stage2`。
-
-踏石最小有效宽度0.30 m。间隙设计依据0.8 m前视范围，预留0.2 m接近边缘距离及0.2 m对岸落脚可见区域；几何测试还覆盖实际路径间隙和多个扫描网格相位。参数是保守的初始设计，测试不代表已经训练收敛。
-
-## 新任务验证与地形预览
+## 验证与行走试验
 
 ```powershell
 python -m unittest discover -s tests -p "test_*.py"
-python scripts/train.py --task ISAL2-RPO-AME-Stage1-v0 --headless --num_envs 8 --terrain_cols 7 --smoke_steps 80 --check_reset
-python scripts/train.py --task ISAL2-RPO-AME-Stage2-v0 --headless --num_envs 8 --terrain_cols 5 --smoke_steps 450 --check_reset
-python scripts/render_course_catalog.py --output outputs/course_catalog
+python scripts/render_reference_catalog.py --headless --device cpu
+python scripts/train.py --task ISAL2-RPO-AME-Stage1-v0 --headless --num_envs 16 --smoke_steps 20 --check_reset --run_name reference_smoke1
+python scripts/train.py --task ISAL2-RPO-AME-Stage2-v0 --headless --num_envs 16 --smoke_steps 20 --check_reset --run_name reference_smoke2
+python scripts/train.py --headless --num_envs 512 --max_iterations 1000 --save_interval 100 --run_name reference_trial_512_1000
+python scripts/evaluate_reference_walk.py --headless --checkpoints outputs/rpo_ame_stage1/reference_trial_512_1000/model_100.pt outputs/rpo_ame_stage1/reference_trial_512_1000/model_300.pt outputs/rpo_ame_stage1/reference_trial_512_1000/model_600.pt outputs/rpo_ame_stage1/reference_trial_512_1000/model_1000.pt --output outputs/reference_walk_evaluation
+python scripts/export_onnx.py --checkpoint outputs/rpo_ame_stage1/reference_trial_512_1000/model_1000.pt
 ```
 
-目录图包含全部120个地形的俯视图、代表等级侧面高度图和 `terrain_parameters.json`。每次训练同时保存实际地图的 `terrain_atlas.json`，包含随机种子、支撑多边形、起终点和几何参数。TensorBoard 的 `Course/<type>/` 记录等级、成功/失败/超时、失败原因和回合/成功完成时间。
+图册输出 `outputs/reference_catalog/stage{1,2}.png`、全部200块/阶段的参数清单和每类型十行的真实碰撞射线测量；检查16种扫描网格相位，沟槽可见性按前视0.8米、距边0.2米、对岸余量0.15米报告，不缩放地形。JSON中`minimum_scan_hits_over_16_phases`为网格覆盖测量，不是机器人一定能落脚的保证。
 
-验收结果见 [VALIDATION_AME_STAGES.md](VALIDATION_AME_STAGES.md)：85项测试通过，两个阶段均完成短程PPO、恢复训练及仿真生命周期检查。
+平地评估使用独立、名义动力学、无观测噪声场景。每个检查点对0.3/0.6/0.9/1.2 m/s各测试64个20秒回合，速度统计排除前2秒，跌倒覆盖完整回合。停滞比例定义为统计时段内平面速度<0.1 m/s的帧比例。逐速度档要求存活率≥90%、平均前进速度为命令的80%–120%、平均平面误差≤max(0.1,0.2×命令)。2秒内跌倒仍计入存活率，缺失后续速度样本明确标记，不能算通过。
 
-## Affordance 两阶段训练
+试验未达标时记录证据，不自动修改奖励或延长训练。实际验收结果见 [VALIDATION_REFERENCE.md](VALIDATION_REFERENCE.md)。
 
-`ISAL2-RPO-Affordance-Stage1-v0` 和 `ISAL2-RPO-Affordance-Stage2-v0` 复用对应 AME 阶段的地形、十级课程、机器人、奖励和干净高程图。Stage1 无推扰，Stage2 每5–8秒叠加各水平轴 ±0.10 m/s 的根速度扰动。策略保持旧 Affordance 的 U-Net 与注意力融合结构。
-
-| 设置 | Affordance Stage1 | Affordance Stage2 |
-|---|---|---|
-| 预测接入策略 | 等待500轮，再用1000轮逐渐启用 | 首次推理即完整启用 |
-| 预测接入样本门槛 | 累计有效样本至少256条 | 无 |
-| 初始 alpha | 0，策略接收常数质量图0.5 | 1，策略接收完整预测 |
-| 监督训练门槛 | 回放中至少64条有效样本 | 同左 |
-
-这里的“轮”是 PPO iteration，不是 episode 或控制步。Stage1 的 `alpha=clamp((iteration-500)/1000,0,1)`，累计有效样本不足256条时保持0。**warm-up 不阻止 U-Net 学习**：两阶段都在有效样本达到64条后，每轮PPO结束执行8次监督更新，batch为256、Adam学习率1e-4。回放容量65,536，保留最近32轮的样本。PPO与U-Net优化器隔离，更新顺序为 rollout → PPO → 监督训练。
-
-成功到达和超时都保留已完成0.25秒评价窗的样本、丢弃未完成样本，不把成功标成失败；真实失败仍强制将对应待评价接触标为0。手动和局部reset清理相应环境未完成的接触记录。
-
-```powershell
-python scripts/train.py --task ISAL2-RPO-Affordance-Stage1-v0 --headless --num_envs 4096 --run_name aff_stage1
-python scripts/train.py --task ISAL2-RPO-Affordance-Stage2-v0 --headless --num_envs 4096 --warm-start outputs/rpo_affordance_stage1/aff_stage1/model_12001.pt --run_name aff_stage2
-python scripts/train.py --task ISAL2-RPO-Affordance-Stage2-v0 --headless --num_envs 4096 --resume outputs/rpo_affordance_stage2/aff_stage2/model_12001.pt --run_name aff_stage2_resume
-python scripts/train.py --task ISAL2-RPO-Affordance-Stage1-v0 --headless --num_envs 8 --terrain_cols 7 --smoke_steps 150 --check_reset
-python scripts/train.py --task ISAL2-RPO-Affordance-Stage2-v0 --headless --num_envs 8 --terrain_cols 5 --smoke_steps 150 --check_reset
-python scripts/export_onnx.py --checkpoint outputs/rpo_affordance_stage2/aff_stage2/model_12001.pt
-```
-
-Stage2也允许从零训练。warm-start必须加载Affordance模型：保留模型权重与归一化统计，清空两组优化器、回放、课程及迭代数，将动作标准差设为0.30；目标Stage1重新预热，目标Stage2的alpha立即设为1。AME→Affordance权重转换不受支持。
-
-同阶段resume要求环境数、seed、地形列数、课程及辅助配置一致，恢复两组优化器、回放、采集统计、课程和随机数状态；Stage1继续原调度，Stage2维持alpha=1。Stage1可用 `--affordance_warmup`（非负）、`--affordance_ramp`（正数）覆盖调度；Stage2只接受这两个参数为0。导出保留实际alpha，包含Stage1预热或渐进状态，以及Stage2完整启用状态。
-
-输出分别在 `outputs/rpo_affordance_stage1` 和 `outputs/rpo_affordance_stage2`。验收记录见 [VALIDATION_AFFORDANCE_STAGES.md](VALIDATION_AFFORDANCE_STAGES.md)。
+2026-09-21验收：迁移功能、114项回归、仿真重置/恢复/接续和导出检查通过；512环境1000轮试训及四个检查点的平地评估已完成，16个检查点/速度组合均未达到行走目标。最终模型在0.3 m/s下几乎静止，更高速度下大量跌倒；没有因此追加训练或更改奖励。完整指标见验收记录及 `outputs/reference_walk_evaluation/summary.csv`。
 
 ## Deprecated 任务历史说明
 

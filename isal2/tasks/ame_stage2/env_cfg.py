@@ -1,9 +1,9 @@
 from isaaclab.utils import configclass
 from isal2.tasks.common.ame.ame_env_cfg import RPOAMEEnvCfg
-from isal2.tasks.common.course.config import CourseCfg, CourseConfigMixin
+from isal2.tasks.common.reference.config import ReferenceCfg, ReferenceConfigMixin
 
 
 @configclass
-class RPOAMEStage2EnvCfg(CourseConfigMixin, RPOAMEEnvCfg):
+class RPOAMEStage2EnvCfg(ReferenceConfigMixin, RPOAMEEnvCfg):
     terrain_preset: str = "ame_stage2"
-    course: CourseCfg = CourseCfg(stage=2)
+    reference: ReferenceCfg = ReferenceCfg(stage=2)

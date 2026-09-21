@@ -1,7 +1,7 @@
 """Active tasks. Environment imports remain lazy until Isaac Sim starts."""
 import gymnasium as gym
 
-for _family, _class in (('ame', 'AME'), ('affordance', 'Affordance')):
+for _family, _class in (('ame', 'AME'),):
     for _stage in (1, 2):
         _id = f"ISAL2-RPO-{_class}-Stage{_stage}-v0"
         if _id not in gym.registry:

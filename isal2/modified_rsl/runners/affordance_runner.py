@@ -1,5 +1,6 @@
 """Fixed rollout/PPO/SL phases with disjoint optimizers and recent contact replay."""
 import torch
+from isal2.utils.checkpoint import load_checkpoint
 from torch.nn import functional as F
 from .on_policy_runner import OnPolicyRunner
 from ..algorithms.affordance_replay import AffordanceReplay
@@ -122,7 +123,7 @@ class AffordanceRunner(OnPolicyRunner):
                 collection_stats=dict(self.env.unwrapped.collector.stats), config=self.aux_cfg)}
 
     def load(self, path, load_optimizer=True, map_location=None):
-        checkpoint = torch.load(path, map_location=map_location or self.device, weights_only=False)
+        checkpoint = load_checkpoint(path, map_location=map_location or self.device)
         state = checkpoint.get("affordance_state")
         if state is None or state["config"] != self.aux_cfg:
             raise ValueError("Affordance resume requires matching supervised/replay/gate configuration")
