@@ -32,7 +32,7 @@ class ReferenceConfigMixin:
         self.reward.lin_vel_z_l2.weight = -.05
         self.reward.termination_penalty.func = mdp.is_terminated
         self.commands.resampling_time_range = (10.,10.)
-        self.commands.rel_standing_envs = 0.
+        self.commands.rel_standing_envs = 0.2 if stage == 1 else 0.
         self.commands.rel_heading_envs = 1.
         self.commands.heading_command = True
         self.commands.heading_control_stiffness = .5
@@ -40,6 +40,9 @@ class ReferenceConfigMixin:
         self.commands.ranges.lin_vel_y = (0.,0.)
         self.commands.ranges.ang_vel_z = (-1.,1.)
         self.commands.ranges.heading = (-math.pi,math.pi) if stage == 1 else (0.,0.)
+        if stage == 1:
+            self.reward.feet_air_time.weight = 0.
+            self.reward.feet_height.weight = 0.
         self.events.reset_base.func = mdp.reset_root_state_uniform
         self.events.reset_base.params = dict(
             pose_range={'x':(-.5,.5), 'y':(-.5,.5), 'yaw':(-3.14,3.14)} if stage == 1 else

@@ -85,7 +85,9 @@ class OnPolicyRunner(RslOnPolicyRunner):
         self._save_current()
 
     def _start_iteration(self, iteration):
-        pass
+        raw = getattr(self.env, "unwrapped", self.env)
+        if hasattr(raw, "set_training_iteration"):
+            raw.set_training_iteration(iteration)
 
     def _after_env_step(self):
         pass

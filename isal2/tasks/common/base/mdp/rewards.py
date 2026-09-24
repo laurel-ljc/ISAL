@@ -253,19 +253,17 @@ def stand_still(
     cmd = (
         torch.norm(env.command_generator.command[:, :2], dim=1) + torch.abs(env.command_generator.command[:, 2])
     )
-    body_lin_vel = torch.linalg.norm(asset.data.root_lin_vel_b[:, :2], dim=1)
-    body_ang_vel = torch.abs(asset.data.root_ang_vel_b[:, 2])
-    body_vel = body_ang_vel + body_lin_vel
     pos_reward = pos_weight * torch.sum(torch.abs
         (asset.data.joint_pos[:, pos_cfg.joint_ids] - asset.data.default_joint_pos[:, pos_cfg.joint_ids]), dim=1
     )
     vel_reward = vel_weight * torch.sum(torch.abs(asset.data.joint_vel[:, vel_cfg.joint_ids]), dim=1)
     reward = torch.where(
-        torch.logical_or(cmd > 0.01, body_vel > 0.5),
+        cmd > 0.01,
         0.0,
         pos_reward + vel_reward,
     )
     reward *= torch.clamp(-env.scene["robot"].data.projected_gravity_b[:, 2], 0, 0.7) / 0.7
+    reward *= getattr(env, "stand_still_scale", 1.0)
     return reward
 
 
